@@ -1,8 +1,8 @@
 {
   "name": "strategy-full-autottl",
-  "displayName": "Full automatic TTL",
+  "displayName": "Base (Full automatic TTL)",
   "order": 11,
-  "description": "Automatic TTL fake and fake split handling across HTTP, TLS and dedicated service traffic.",
+  "description": "Base with automatic TTL fake and fake split handling across HTTP, TLS and dedicated service traffic.",
   "interception": {
     "tcpOut": "80,443,2053,2083,2087,2096,8443",
     "udpOut": "443,19294-19344,50000-50100"

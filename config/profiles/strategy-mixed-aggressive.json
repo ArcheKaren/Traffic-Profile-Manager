@@ -1,8 +1,8 @@
 {
   "name": "strategy-mixed-aggressive",
-  "displayName": "Mixed aggressive",
+  "displayName": "Base (Mixed aggressive)",
   "order": 14,
-  "description": "Higher-repeat mixed fake, disorder, automatic TTL and QUIC handling.",
+  "description": "Base with higher-repeat mixed fake, disorder, automatic TTL and QUIC handling.",
   "interception": {
     "tcpOut": "80,443,2053,2083,2087,2096,8443",
     "udpOut": "443,19294-19344,50000-50100"

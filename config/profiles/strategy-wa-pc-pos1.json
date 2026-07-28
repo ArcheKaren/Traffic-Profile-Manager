@@ -1,8 +1,8 @@
 {
   "name": "strategy-wa-pc-pos1",
-  "displayName": "Verified baseline",
+  "displayName": "Base",
   "order": 1,
-  "description": "Verified baseline with dedicated Discord and WhatsApp handling.",
+  "description": "Base profile with dedicated Discord and WhatsApp handling.",
   "interception": {
     "tcpOut": "80,443,2053,2083,2087,2096,8443",
     "udpOut": "443,19294-19344,50000-50100"

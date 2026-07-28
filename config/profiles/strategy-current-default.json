@@ -1,8 +1,8 @@
 {
   "name": "strategy-current-default",
-  "displayName": "Current default",
+  "displayName": "Base (Current defaults)",
   "order": 9,
-  "description": "Current zapret2-style defaults applied to general and dedicated service traffic.",
+  "description": "Base with current zapret2-style defaults applied to general and dedicated service traffic.",
   "interception": {
     "tcpOut": "80,443,2053,2083,2087,2096,8443",
     "udpOut": "443,19294-19344,50000-50100"

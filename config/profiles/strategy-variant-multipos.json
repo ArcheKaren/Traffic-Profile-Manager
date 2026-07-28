@@ -1,8 +1,8 @@
 {
   "name": "strategy-variant-multipos",
-  "displayName": "Multiple split positions",
+  "displayName": "Base (Multiple split positions)",
   "order": 6,
-  "description": "Verified base with several TLS disorder positions.",
+  "description": "Base with several TLS disorder positions.",
   "interception": {"tcpOut": "80,443,2053,2083,2087,2096,8443", "udpOut": "443,19294-19344,50000-50100"},
   "blobs": [
     {"name": "sample_discord", "path": "assets\\ACTIVE_DISCORD_UDP.bin"},

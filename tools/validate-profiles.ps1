@@ -2,6 +2,9 @@ $ErrorActionPreference = "Continue"
 $appRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 . (Join-Path $appRoot "tools\profile-library.ps1")
 $profiles = @(Get-TrafficProfiles $appRoot -IncludeInvalid)
+$stateRoot = Join-Path $appRoot "state"
+New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
+$validationPath = Join-Path $stateRoot "last-validation.txt"
 
 $failed = 0
 $results = New-Object "Collections.Generic.List[string]"
@@ -9,7 +12,7 @@ if ($profiles.Count -eq 0) {
     Write-Host "No profile files were found." -ForegroundColor Red
     $results.Add("No profile files were found.")
     [IO.File]::WriteAllLines(
-        (Join-Path $appRoot "state\last-validation.txt"),
+        $validationPath,
         $results.ToArray()
     )
     exit 1
@@ -51,9 +54,9 @@ Write-Host ""
 if ($failed) {
     Write-Host "$failed profile(s) failed validation." -ForegroundColor Red
     $results.Add("$failed profile(s) failed validation.")
-    [IO.File]::WriteAllLines((Join-Path $appRoot "state\last-validation.txt"), $results.ToArray())
+    [IO.File]::WriteAllLines($validationPath, $results.ToArray())
     exit 1
 }
 Write-Host "All profiles passed validation." -ForegroundColor Green
 $results.Add("All profiles passed validation.")
-[IO.File]::WriteAllLines((Join-Path $appRoot "state\last-validation.txt"), $results.ToArray())
+[IO.File]::WriteAllLines($validationPath, $results.ToArray())

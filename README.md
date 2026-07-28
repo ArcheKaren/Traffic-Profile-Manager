@@ -105,7 +105,7 @@ Windows, редактировать списки целей и исключен�
    непосредственно из ZIP.
 3. Запустите `Manager.bat` и подтвердите запрос UAC.
 4. Выберите **Run a profile in a visible window**.
-5. Для начала попробуйте **Verified baseline**.
+5. Для начала попробуйте **Base**.
 6. Пока окно профиля открыто, профиль работает.
 7. Закройте окно или нажмите `Ctrl+C`, чтобы остановить профиль и удалить его
    временные сопоставления.
@@ -144,20 +144,20 @@ Windows, редактировать списки целей и исключен�
 
 | № | Профиль | Основное отличие |
 | ---: | --- | --- |
-| 1 | Verified baseline | Осторожная общая обработка и отдельные правила Discord/WhatsApp |
-| 2 | Split position 1 | Простой разрез общего TLS в позиции 1 |
-| 3 | Fake TLS with MD5 | Поддельный TLS, MD5 и сдвиг последовательности |
-| 4 | Automatic TTL | Автоматический TTL для fake-пакета и fake split |
-| 5 | QUIC fake | Поддельный QUIC вместо удаления QUIC-пакетов |
-| 6 | Multiple split positions | Несколько позиций TLS disorder |
-| 7 | Randomized TLS | Рандомизированный fake TLS и дублированный session ID |
-| 8 | Sequence overlap | Изменение TCP timestamp и перекрытие последовательности |
-| 9 | Current default | Текущие zapret2-подобные настройки для общих и отдельных правил |
-| 10 | Full fake TLS with MD5 | Fake TLS/MD5 во всех основных группах правил |
-| 11 | Full automatic TTL | Auto-TTL для HTTP, TLS и отдельных групп |
-| 12 | Full multiple positions | Несколько позиций split/disorder в группах правил |
-| 13 | Timestamp overlap | Timestamp и overlap в общих и отдельных правилах |
-| 14 | Mixed aggressive | Более интенсивное сочетание fake, disorder, auto-TTL и QUIC |
+| 1 | Base | Осторожная общая обработка и отдельные правила Discord/WhatsApp |
+| 2 | Base (Split position 1) | Простой разрез общего TLS в позиции 1 |
+| 3 | Base (Fake TLS with MD5) | Поддельный TLS, MD5 и сдвиг последовательности |
+| 4 | Base (Automatic TTL) | Автоматический TTL для fake-пакета и fake split |
+| 5 | Base (QUIC fake) | Поддельный QUIC вместо удаления QUIC-пакетов |
+| 6 | Base (Multiple split positions) | Несколько позиций TLS disorder |
+| 7 | Base (Randomized TLS) | Рандомизированный fake TLS и дублированный session ID |
+| 8 | Base (Sequence overlap) | Изменение TCP timestamp и перекрытие последовательности |
+| 9 | Base (Current defaults) | Текущие zapret2-подобные настройки для общих и отдельных правил |
+| 10 | Base (Full fake TLS with MD5) | Fake TLS/MD5 во всех основных группах правил |
+| 11 | Base (Full automatic TTL) | Auto-TTL для HTTP, TLS и отдельных групп |
+| 12 | Base (Full multiple positions) | Несколько позиций split/disorder в группах правил |
+| 13 | Base (Timestamp overlap) | Timestamp и overlap в общих и отдельных правилах |
+| 14 | Base (Mixed aggressive) | Более интенсивное сочетание fake, disorder, auto-TTL и QUIC |
 
 Сетевые маршруты отличаются. Для выбора профиля на конкретном компьютере
 используйте общее сравнение и обязательно проверяйте реальные приложения.
@@ -169,10 +169,10 @@ Windows, редактировать списки целей и исключен�
 Каждый готовый профиль можно запустить без менеджера:
 
 ```text
-1 - Verified.bat
-2 - Split Position 1.bat
+1 - Base.bat
+2 - Base (Split position 1).bat
 ...
-14 - Mixed Aggressive.bat
+14 - Base (Mixed aggressive).bat
 ```
 
 Любой обнаруженный пользовательский профиль запускается из менеджера или из

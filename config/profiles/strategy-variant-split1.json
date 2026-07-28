@@ -1,8 +1,8 @@
 {
   "name": "strategy-variant-split1",
-  "displayName": "Split position 1",
+  "displayName": "Base (Split position 1)",
   "order": 2,
-  "description": "Strategy 1 base with simple TLS split at position 1.",
+  "description": "Base with simple TLS split at position 1.",
   "interception": {"tcpOut": "80,443,2053,2083,2087,2096,8443", "udpOut": "443,19294-19344,50000-50100"},
   "blobs": [
     {"name": "sample_discord", "path": "assets\\ACTIVE_DISCORD_UDP.bin"},

@@ -1,8 +1,8 @@
 {
   "name": "strategy-variant-autottl",
-  "displayName": "Automatic TTL",
+  "displayName": "Base (Automatic TTL)",
   "order": 4,
-  "description": "Strategy 1 base with automatic TTL fake and fake split.",
+  "description": "Base with automatic TTL fake and fake split.",
   "interception": {"tcpOut": "80,443,2053,2083,2087,2096,8443", "udpOut": "443,19294-19344,50000-50100"},
   "blobs": [
     {"name": "sample_discord", "path": "assets\\ACTIVE_DISCORD_UDP.bin"},

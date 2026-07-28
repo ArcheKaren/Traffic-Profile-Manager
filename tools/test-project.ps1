@@ -257,13 +257,35 @@ if (Test-Path -LiteralPath $profileLibrary -PathType Leaf) {
             Add-Failure "Launcher '$($launcher.Name)' selects an unknown profile."
         } elseif ($launcherOrder -ne $profile.Order) {
             Add-Failure "Launcher '$($launcher.Name)' does not match profile order."
+        } else {
+            $expectedLauncherName = "{0} - {1}.bat" -f @(
+                $profile.Order,
+                $profile.DisplayName
+            )
+            if ($launcher.Name -cne $expectedLauncherName) {
+                Add-Failure (
+                    "Launcher '$($launcher.Name)' should be named " +
+                    "'$expectedLauncherName'."
+                )
+            }
         }
         if (-not $launcherIds.Add($launcherProfileId)) {
             Add-Failure "Multiple launchers select profile '$launcherProfileId'."
         }
     }
+    if ($launchers.Count -ne $validProfiles.Count) {
+        Add-Failure (
+            "Direct launcher count $($launchers.Count) does not match " +
+            "profile count $($validProfiles.Count)."
+        )
+    }
+    foreach ($profile in $validProfiles) {
+        if (-not $launcherIds.Contains($profile.Id)) {
+            Add-Failure "No direct launcher selects profile '$($profile.Id)'."
+        }
+    }
     if (
-        $launchers.Count -gt 0 -and
+        $launchers.Count -eq $validProfiles.Count -and
         -not @($failures | Where-Object { $_ -match "launcher" }).Count
     ) {
         Add-Success "Direct profile launchers ($($launchers.Count) files)"

@@ -1,8 +1,8 @@
 {
   "name": "strategy-timestamp-overlap",
-  "displayName": "Timestamp overlap",
+  "displayName": "Base (Timestamp overlap)",
   "order": 13,
-  "description": "TCP timestamp fake and sequence overlap handling across HTTP, TLS and dedicated service traffic.",
+  "description": "Base with TCP timestamp fake and sequence overlap handling across HTTP, TLS and dedicated service traffic.",
   "interception": {
     "tcpOut": "80,443,2053,2083,2087,2096,8443",
     "udpOut": "443,19294-19344,50000-50100"

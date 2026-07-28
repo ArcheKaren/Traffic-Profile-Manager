@@ -1,8 +1,8 @@
 {
   "name": "strategy-full-multipos",
-  "displayName": "Full multiple positions",
+  "displayName": "Base (Full multiple positions)",
   "order": 12,
-  "description": "Multiple split and disorder positions across HTTP, TLS and dedicated service traffic.",
+  "description": "Base with multiple split and disorder positions across HTTP, TLS and dedicated service traffic.",
   "interception": {
     "tcpOut": "80,443,2053,2083,2087,2096,8443",
     "udpOut": "443,19294-19344,50000-50100"

@@ -1,8 +1,8 @@
 {
   "name": "strategy-full-fake-md5",
-  "displayName": "Full fake TLS with MD5",
+  "displayName": "Base (Full fake TLS with MD5)",
   "order": 10,
-  "description": "Fake TLS, MD5 and shifted sequence handling across general and dedicated service traffic.",
+  "description": "Base with fake TLS, MD5 and shifted sequence handling across general and dedicated service traffic.",
   "interception": {
     "tcpOut": "80,443,2053,2083,2087,2096,8443",
     "udpOut": "443,19294-19344,50000-50100"
