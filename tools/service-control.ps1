@@ -167,6 +167,21 @@ switch ($Action) {
             -Pattern "# TrafficProfileManager Mapping BEGIN" `
             -SimpleMatch -Quiet -ErrorAction SilentlyContinue
         Write-Host "Temporary mappings: $(if ($managed) { 'active' } else { 'clean' })"
+        try {
+            $gameFilters = @(Get-EnabledGameFilters $appRoot -ThrowOnInvalid)
+            $filterNames = @($gameFilters | ForEach-Object DisplayName)
+            Write-Host (
+                "Game filters: {0}" -f
+                $(if ($filterNames.Count) {
+                    $filterNames -join ", "
+                } else {
+                    "none"
+                })
+            )
+        } catch {
+            Write-Host "Game filters: invalid ($($_.Exception.Message))" `
+                -ForegroundColor Red
+        }
     }
     "start" {
         $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue

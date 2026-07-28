@@ -36,6 +36,11 @@ https://github.com/Flowseal/zapret-discord-youtube
 Проект Flowseal/zapret-discord-youtube распространяется по лицензии MIT.
 Сохранена атрибуция авторам bol-van и Flowseal.
 
+Файл assets\ACTIVE_GAME_UDP.bin получен из каталога bin этого проекта:
+
+SHA-256:
+E065870CB0D13152E6132807BBF42218A9E7CD8D96F5602B61674CC540F3A56E
+
 
 ОРИГИНАЛЬНЫЙ ТЕКСТ ЛИЦЕНЗИИ MIT
 -------------------------------

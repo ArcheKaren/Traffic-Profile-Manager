@@ -5,10 +5,17 @@ param(
 
     [string]$HostsPath = "",
 
-    [int]$WinwsPid = 0
+    [int]$WinwsPid = 0,
+
+    [string]$AppRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
+$appRoot = if ($AppRoot) {
+    [IO.Path]::GetFullPath($AppRoot)
+} else {
+    $PSScriptRoot
+}
 $hostsPath = if ($HostsPath) {
     [IO.Path]::GetFullPath($HostsPath)
 } else {
@@ -17,8 +24,10 @@ $hostsPath = if ($HostsPath) {
 $beginMarker = "# TrafficProfileManager Mapping BEGIN"
 $endMarker = "# TrafficProfileManager Mapping END"
 $whatsAppAddress = "57.144.245.32"
-$webAddressCache = Join-Path $PSScriptRoot "state\instagram-web-ip.txt"
-$threadsWebAddressCache = Join-Path $PSScriptRoot "state\threads-web-ip.txt"
+$webAddressCache = Join-Path $appRoot "state\instagram-web-ip.txt"
+$threadsWebAddressCache = Join-Path $appRoot "state\threads-web-ip.txt"
+
+. (Join-Path $PSScriptRoot "tools\game-filter-library.ps1")
 
 $metaFallback = @{
     "instagram.com" = "157.240.0.174"
@@ -357,6 +366,19 @@ function Get-ManagedMappings([bool]$IncludeInstagram) {
             $mappings["threads.com"] = $threadsAddress
             $mappings["www.threads.com"] = $threadsAddress
         }
+    }
+
+    foreach ($mapping in Get-EnabledGameFilterMappings $appRoot) {
+        if (
+            $mappings.ContainsKey($mapping.Name) -and
+            $mappings[$mapping.Name] -ne $mapping.Address
+        ) {
+            throw (
+                "Game filter '$($mapping.FilterId)' conflicts with another " +
+                "mapping for '$($mapping.Name)'."
+            )
+        }
+        $mappings[$mapping.Name] = $mapping.Address
     }
 
     return $mappings

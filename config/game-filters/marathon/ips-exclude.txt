@@ -1,0 +1,1 @@
+# IP/CIDR exclusions for this game. One entry per line.

@@ -24,6 +24,8 @@ $script:AppRoot = if ($env:ZAPRETCTL_HOME) {
     Split-Path -Parent $MyInvocation.MyCommand.Path
 }
 
+. (Join-Path $PSScriptRoot "tools\game-filter-library.ps1")
+
 function Get-AppPath([string]$RelativePath) {
     return [IO.Path]::GetFullPath((Join-Path $script:AppRoot $RelativePath))
 }
@@ -60,7 +62,15 @@ function Read-JsonFile([string]$Path) {
 }
 
 function Initialize-App {
-    foreach ($directory in @("config", "config\profiles", "lists", "logs", "runtime", "state")) {
+    foreach ($directory in @(
+        "config",
+        "config\profiles",
+        "config\game-filters",
+        "lists",
+        "logs",
+        "runtime",
+        "state"
+    )) {
         New-Item -ItemType Directory -Path (Get-AppPath $directory) -Force | Out-Null
     }
 
@@ -384,6 +394,9 @@ function Add-ProfileArguments(
         Get-AppPath "lists\domains.txt"
         Get-AppPath "lists\user-domains.txt"
     )
+    $domainLists += @(
+        Get-EnabledGameFilterListPaths $script:AppRoot "domain"
+    )
     if ($env:TRAFFIC_PROFILE_BENCHMARK_LIST) {
         $benchmarkList = [IO.Path]::GetFullPath($env:TRAFFIC_PROFILE_BENCHMARK_LIST)
         $appRootPrefix = $script:AppRoot.TrimEnd("\") + "\"
@@ -395,14 +408,23 @@ function Add-ProfileArguments(
         Get-AppPath "lists\domains-exclude.txt"
         Get-AppPath "lists\user-domains-exclude.txt"
     )
+    $domainExcludes += @(
+        Get-EnabledGameFilterListPaths $script:AppRoot "domain-exclude"
+    )
     $autoList = Get-AppPath "lists\domains-auto.txt"
     $ipLists = @(
         Get-AppPath "lists\ips.txt"
         Get-AppPath "lists\user-ips.txt"
     )
+    $ipLists += @(
+        Get-EnabledGameFilterListPaths $script:AppRoot "ip"
+    )
     $ipExcludes = @(
         Get-AppPath "lists\ips-exclude.txt"
         Get-AppPath "lists\user-ips-exclude.txt"
+    )
+    $ipExcludes += @(
+        Get-EnabledGameFilterListPaths $script:AppRoot "ip-exclude"
     )
     $config = Get-Config
 
@@ -456,6 +478,71 @@ function Add-ProfileArguments(
     }
 }
 
+function Add-GameTransportArguments(
+    [Collections.Generic.List[string]]$Result,
+    [object[]]$Transports,
+    [ref]$IsFirst
+) {
+    $globalExcludes = @(
+        Get-AppPath "lists\ips-exclude.txt"
+        Get-AppPath "lists\user-ips-exclude.txt"
+    )
+    foreach ($filter in $Transports) {
+        $transport = $filter.Transport
+        $id = ([string]$filter.Id).Replace("-", "_")
+        $excludes = @($globalExcludes + @($filter.IpExcludesPath))
+
+        if ($transport.UsesTcp) {
+            if ($IsFirst.Value) {
+                $Result.Add("--name=tpm-game-$($filter.Id)-tcp")
+                $IsFirst.Value = $false
+            } else {
+                $Result.Add("--new=tpm-game-$($filter.Id)-tcp")
+            }
+            $Result.Add("--filter-tcp=$($transport.TcpPorts)")
+            $Result.Add("--ipset=$($filter.IpsPath)")
+            foreach ($exclude in $excludes) {
+                if ((Get-MeaningfulLines $exclude).Count -gt 0) {
+                    $Result.Add("--ipset-exclude=$exclude")
+                }
+            }
+            $Result.Add("--out-range=-d3")
+            if ($transport.Preset -eq "extended") {
+                $Result.Add(
+                    "--lua-desync=multisplit:pos=1:seqovl=568:" +
+                    "seqovl_pattern=tpm_game_tcp_pattern:payload=~empty"
+                )
+            } else {
+                $Result.Add(
+                    "--lua-desync=multisplit:pos=2:payload=~empty"
+                )
+            }
+        }
+
+        if ($transport.UsesUdp) {
+            if ($IsFirst.Value) {
+                $Result.Add("--name=tpm-game-$($filter.Id)-udp")
+                $IsFirst.Value = $false
+            } else {
+                $Result.Add("--new=tpm-game-$($filter.Id)-udp")
+            }
+            $Result.Add("--filter-udp=$($transport.UdpPorts)")
+            $Result.Add("--ipset=$($filter.IpsPath)")
+            foreach ($exclude in $excludes) {
+                if ((Get-MeaningfulLines $exclude).Count -gt 0) {
+                    $Result.Add("--ipset-exclude=$exclude")
+                }
+            }
+            $repeats = if ($transport.Preset -eq "extended") { 12 } else { 4 }
+            $Result.Add("--out-range=-d2")
+            $Result.Add(
+                "--lua-desync=fake:blob=tpm_game_udp_${id}:" +
+                "payload=~empty:repeats=$repeats"
+            )
+        }
+    }
+}
+
 function Build-WinwsArguments([bool]$DryRun, [string]$ProfileName = "") {
     $config = Get-Config
     $profile = if ($ProfileName) {
@@ -464,11 +551,17 @@ function Build-WinwsArguments([bool]$DryRun, [string]$ProfileName = "") {
     } else {
         Get-ActiveProfile
     }
+    $gameTransports = @(
+        Get-EnabledGameFilterTransports $script:AppRoot
+    )
     $executable = Find-RuntimeExecutable
     $luaLib = Find-RuntimeFile "zapret-lib.lua" $executable
     $luaAntidpi = Find-RuntimeFile "zapret-antidpi.lua" $executable
     $domainCount = @(Get-MeaningfulLines (Get-AppPath "lists\domains.txt")).Count +
         @(Get-MeaningfulLines (Get-AppPath "lists\user-domains.txt")).Count
+    foreach ($path in Get-EnabledGameFilterListPaths $script:AppRoot "domain") {
+        $domainCount += @(Get-MeaningfulLines $path).Count
+    }
     if ($env:TRAFFIC_PROFILE_BENCHMARK_LIST) {
         $benchmarkList = [IO.Path]::GetFullPath($env:TRAFFIC_PROFILE_BENCHMARK_LIST)
         $appRootPrefix = $script:AppRoot.TrimEnd("\") + "\"
@@ -478,6 +571,9 @@ function Build-WinwsArguments([bool]$DryRun, [string]$ProfileName = "") {
     }
     $ipCount = @(Get-MeaningfulLines (Get-AppPath "lists\ips.txt")).Count +
         @(Get-MeaningfulLines (Get-AppPath "lists\user-ips.txt")).Count
+    foreach ($path in Get-EnabledGameFilterListPaths $script:AppRoot "ip") {
+        $ipCount += @(Get-MeaningfulLines $path).Count
+    }
     if ($domainCount -eq 0 -and $ipCount -eq 0 -and -not $config.allowAllWithoutTargets) {
         throw "No domain or IP targets are configured. Add a target or explicitly enable allowAllWithoutTargets in config.json."
     }
@@ -508,10 +604,47 @@ function Build-WinwsArguments([bool]$DryRun, [string]$ProfileName = "") {
             $result.Add("--blob=$($blob.name):@$blobPath")
         }
     }
-    if ($profile.interception.tcpOut) {
-        $result.Add("--wf-tcp-out=$($profile.interception.tcpOut)")
+    $profileBlobNames = @($profile.blobs | ForEach-Object { [string]$_.name })
+    if (
+        @($gameTransports | Where-Object {
+            $_.Transport.UsesTcp -and $_.Transport.Preset -eq "extended"
+        }).Count
+    ) {
+        if ($profileBlobNames -contains "tpm_game_tcp_pattern") {
+            throw "Profile blob name 'tpm_game_tcp_pattern' is reserved."
+        }
+        $tcpPattern = Get-AppPath "assets\tls_clienthello_www_google_com.bin"
+        if (-not (Test-Path -LiteralPath $tcpPattern -PathType Leaf)) {
+            throw "Game transport TCP pattern was not found: $tcpPattern"
+        }
+        $result.Add("--blob=tpm_game_tcp_pattern:@$tcpPattern")
     }
-    if ($profile.interception.udpOut) { $result.Add("--wf-udp-out=$($profile.interception.udpOut)") }
+    foreach ($filter in @(
+        $gameTransports | Where-Object { $_.Transport.UsesUdp }
+    )) {
+        $blobName = "tpm_game_udp_$(([string]$filter.Id).Replace('-', '_'))"
+        if ($profileBlobNames -contains $blobName) {
+            throw "Profile blob name '$blobName' is reserved."
+        }
+        $result.Add("--blob=${blobName}:@$($filter.Transport.UdpFakePath)")
+    }
+
+    $tcpOut = Merge-GameFilterPortExpressions @(
+        [string]$profile.interception.tcpOut
+        $gameTransports |
+            Where-Object { $_.Transport.UsesTcp } |
+            ForEach-Object { [string]$_.Transport.TcpPorts }
+    )
+    $udpOut = Merge-GameFilterPortExpressions @(
+        [string]$profile.interception.udpOut
+        $gameTransports |
+            Where-Object { $_.Transport.UsesUdp } |
+            ForEach-Object { [string]$_.Transport.UdpPorts }
+    )
+    if ($tcpOut) {
+        $result.Add("--wf-tcp-out=$tcpOut")
+    }
+    if ($udpOut) { $result.Add("--wf-udp-out=$udpOut") }
     if ($profile.interception.tcpIn) { $result.Add("--wf-tcp-in=$($profile.interception.tcpIn)") }
     if ($profile.interception.udpIn) { $result.Add("--wf-udp-in=$($profile.interception.udpIn)") }
     if ($profile.interception.rawParts) {
@@ -545,6 +678,7 @@ function Build-WinwsArguments([bool]$DryRun, [string]$ProfileName = "") {
             foreach ($argument in $rule.actions) { $result.Add([string]$argument) }
         }
     }
+    Add-GameTransportArguments $result $gameTransports ([ref]$first)
     return $result.ToArray()
 }
 
@@ -712,9 +846,22 @@ function Start-Zapret([bool]$DryRun, [string]$ProfileName = "") {
     $startInfo.WorkingDirectory = Split-Path -Parent $executable
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
+    if ($DryRun) {
+        $startInfo.EnvironmentVariables["__COMPAT_LAYER"] = "RunAsInvoker"
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+    }
     $process = [Diagnostics.Process]::Start($startInfo)
     if ($DryRun) {
+        $standardOutput = $process.StandardOutput.ReadToEnd()
+        $standardError = $process.StandardError.ReadToEnd()
         $process.WaitForExit()
+        if ($standardOutput) {
+            Write-Host $standardOutput.TrimEnd()
+        }
+        if ($standardError) {
+            Write-Host $standardError.TrimEnd() -ForegroundColor Red
+        }
         if ($process.ExitCode -ne 0) { throw "Parameter validation exited with code $($process.ExitCode)." }
         Write-Host "winws2 accepted the parameters."
         return

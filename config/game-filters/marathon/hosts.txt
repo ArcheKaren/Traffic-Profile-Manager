@@ -1,0 +1,22 @@
+# Optional sign-in mappings supplied by a user.
+# The relay is third-party infrastructure and may change without notice.
+87.228.47.195 www1.signon.goliath.prod.gravityshavings.net
+87.228.47.195 www2.signon.goliath.prod.gravityshavings.net
+87.228.47.195 www3.signon.goliath.prod.gravityshavings.net
+87.228.47.195 www4.signon.goliath.prod.gravityshavings.net
+87.228.47.195 www5.signon.goliath.prod.gravityshavings.net
+87.228.47.195 www6.signon.goliath.prod.gravityshavings.net
+87.228.47.195 www7.signon.goliath.prod.gravityshavings.net
+87.228.47.195 www8.signon.goliath.prod.gravityshavings.net
+87.228.47.195 www9.signon.goliath.prod.gravityshavings.net
+87.228.47.195 www10.signon.goliath.prod.gravityshavings.net
+87.228.47.195 www1.signon.goliath.prod.deadorbit.net
+87.228.47.195 www2.signon.goliath.prod.deadorbit.net
+87.228.47.195 www3.signon.goliath.prod.deadorbit.net
+87.228.47.195 www4.signon.goliath.prod.deadorbit.net
+87.228.47.195 www5.signon.goliath.prod.deadorbit.net
+87.228.47.195 www6.signon.goliath.prod.deadorbit.net
+87.228.47.195 www7.signon.goliath.prod.deadorbit.net
+87.228.47.195 www8.signon.goliath.prod.deadorbit.net
+87.228.47.195 www9.signon.goliath.prod.deadorbit.net
+87.228.47.195 www10.signon.goliath.prod.deadorbit.net

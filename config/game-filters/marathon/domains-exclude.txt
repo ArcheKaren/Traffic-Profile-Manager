@@ -1,0 +1,1 @@
+# Domain exclusions for this game. One domain per line.

@@ -32,6 +32,7 @@ echo [9] Background component controls
 echo [10] Edit a traffic profile
 echo [11] Create a custom profile
 echo [12] Open the profile folder
+echo [13] Game filters
 echo.
 echo [0] Exit
 echo.
@@ -50,6 +51,7 @@ if "%menu_choice%"=="9" goto background_controls
 if "%menu_choice%"=="10" goto edit_profile
 if "%menu_choice%"=="11" goto create_profile
 if "%menu_choice%"=="12" goto open_profiles
+if "%menu_choice%"=="13" goto game_filters
 if "%menu_choice%"=="0" exit /b
 goto menu
 
@@ -124,6 +126,10 @@ goto menu
 
 :open_profiles
 start "" explorer.exe "%~dp0config\profiles"
+goto menu
+
+:game_filters
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\game-filter-manager.ps1" manage
 goto menu
 
 :background_controls

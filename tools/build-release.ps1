@@ -222,6 +222,8 @@ $rootFiles = @(
 )
 $releaseToolFiles = @(
     "profile-benchmark.ps1"
+    "game-filter-library.ps1"
+    "game-filter-manager.ps1"
     "profile-library.ps1"
     "profile-manager.ps1"
     "run-profile.bat"
@@ -243,11 +245,19 @@ try {
                 Copy-ProjectFile (Join-Path $directory $_.Name)
             }
     }
+    Get-ChildItem `
+        -LiteralPath (Join-Path $projectRoot "config\game-filters") `
+        -File `
+        -Recurse |
+        ForEach-Object {
+            Copy-ProjectFile $_.FullName.Substring($projectRoot.Length + 1)
+        }
     Copy-ProjectFile "config\config.json"
     foreach ($name in @("targets.txt")) {
         Copy-ProjectFile (Join-Path "tests" $name)
     }
     Copy-ProjectFile "docs\PROFILE_FORMAT.md"
+    Copy-ProjectFile "docs\GAME_FILTERS.md"
     foreach ($name in $releaseToolFiles) {
         Copy-ProjectFile (Join-Path "tools" $name)
     }

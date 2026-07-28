@@ -1,0 +1,2 @@
+# Optional zapret2 IP addresses or CIDR ranges for this game.
+# Leave empty when only the hosts mappings are required.

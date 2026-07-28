@@ -1,0 +1,2 @@
+# Optional zapret2 domains for this game. One domain per line.
+# Leave empty when only the hosts mappings are required.

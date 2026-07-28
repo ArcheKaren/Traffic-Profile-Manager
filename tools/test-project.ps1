@@ -52,13 +52,17 @@ $requiredPaths = @(
     "zapretctl.ps1"
     "manage-network-mappings.ps1"
     "config\config.json"
+    "config\game-filters"
     "config\profiles"
+    "docs\GAME_FILTERS.md"
     "lists\domains.txt"
     "lists\domains-exclude.txt"
     "tests\targets.txt"
     "tools\profile-library.ps1"
     "tools\profile-manager.ps1"
     "tools\profile-benchmark.ps1"
+    "tools\game-filter-library.ps1"
+    "tools\game-filter-manager.ps1"
     "tools\service-control.ps1"
 )
 $missingPaths = @(
@@ -376,6 +380,32 @@ foreach ($relativePath in $ipLists) {
 }
 if (-not @($failures | Where-Object { $_ -match "in lists\\" }).Count) {
     Add-Success "Target and exclusion lists ($listEntryCount entries)"
+}
+
+$gameFilterLibrary = Get-ProjectPath "tools\game-filter-library.ps1"
+if (Test-Path -LiteralPath $gameFilterLibrary -PathType Leaf) {
+    . $gameFilterLibrary
+    try {
+        $gameFilters = @(Get-GameFilters $projectRoot -IncludeInvalid)
+        foreach ($filter in @($gameFilters | Where-Object { -not $_.Valid })) {
+            Add-Failure "Invalid game filter '$($filter.Id)': $($filter.Error)"
+        }
+        try {
+            [void]@(Get-EnabledGameFilters $projectRoot -ThrowOnInvalid)
+        } catch {
+            Add-Failure "Invalid enabled game filter state: $($_.Exception.Message)"
+        }
+        if (-not @(
+            $failures |
+                Where-Object {
+                    $_ -match "game filter"
+                }
+        ).Count) {
+            Add-Success "Dynamic game filter catalog ($($gameFilters.Count) filters)"
+        }
+    } catch {
+        Add-Failure "Game filter catalog could not be read: $($_.Exception.Message)"
+    }
 }
 
 foreach ($relativePath in @("tests\targets.txt")) {

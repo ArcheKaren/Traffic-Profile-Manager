@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 2,
+  "id": "marathon",
+  "displayName": "Marathon sign-in",
+  "description": "Optional user-provided sign-in mappings. Review the relay address before enabling.",
+  "transport": {
+    "mode": "off",
+    "preset": "balanced",
+    "tcpPorts": "1024-65535",
+    "udpPorts": "1024-65535",
+    "udpFake": "assets\\ACTIVE_GAME_UDP.bin"
+  }
+}
