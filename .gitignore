@@ -1,0 +1,23 @@
+# Generated runtime state
+/logs/*
+/state/*
+/test-results/*
+/tests/.tmp-*/
+
+# Local upstream/runtime checkouts
+/runtime/*
+!/runtime/README.md
+!/runtime/SOURCE.json
+
+# Generated release artifacts
+/release/
+*.build
+*.build.zip
+
+# Editor and OS files
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*.user
+*.tmp

@@ -1,0 +1,4 @@
+# Import fixture
+github.com
+example.net
+github.com

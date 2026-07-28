@@ -1,0 +1,20 @@
+{
+  "name": "strategy-variant-fake-md5",
+  "displayName": "Fake TLS with MD5",
+  "order": 3,
+  "description": "Verified base with fake TLS, MD5 and shifted TCP sequence.",
+  "interception": {"tcpOut": "80,443,2053,2083,2087,2096,8443", "udpOut": "443,19294-19344,50000-50100"},
+  "blobs": [
+    {"name": "sample_discord", "path": "assets\\ACTIVE_DISCORD_UDP.bin"},
+    {"name": "sample_stun", "path": "assets\\stun.bin"},
+    {"name": "sample_tls", "path": "assets\\tls_clienthello_www_google_com.bin"}
+  ],
+  "rules": [
+    {"name": "discord-tls", "scope": "first", "match": ["--filter-tcp=443,2053,2083,2087,2096,8443", "--filter-l7=tls", "--hostlist-domains=discord.com,discord.gg,discord.app,discord.media,discordapp.com,discordapp.net,discordcdn.com"], "actions": ["--out-range=-d10", "--payload=tls_client_hello", "--lua-desync=fake:blob=sample_tls:tcp_ts=-1000:repeats=8", "--lua-desync=multisplit:pos=1:seqovl=681:seqovl_pattern=sample_tls"]},
+    {"name": "whatsapp-pc-pos1", "scope": "first", "match": ["--filter-tcp=443", "--filter-l7=tls", "--hostlist-domains=whatsapp.com,whatsapp.net,wa.me,wl.co,whatsappbrand.com,fbcdn.net"], "actions": ["--out-range=-d10", "--payload=tls_client_hello", "--lua-desync=multidisorder:pos=1"]},
+    {"name": "http", "match": ["--filter-tcp=80", "--filter-l7=http"], "actions": ["--payload=http_req", "--lua-desync=multisplit:pos=method+2"]},
+    {"name": "tls", "match": ["--filter-tcp=443", "--filter-l7=tls"], "actions": ["--out-range=-d10", "--payload=tls_client_hello", "--lua-desync=fake:blob=sample_tls:tcp_md5:tcp_seq=-10000:repeats=6", "--lua-desync=multidisorder:pos=1,midsld"]},
+    {"name": "quic", "match": ["--filter-udp=443", "--filter-l7=quic"], "actions": ["--payload=quic_initial", "--lua-desync=drop"]},
+    {"name": "discord-media", "scope": "all", "match": ["--filter-udp=19294-19344,50000-50100", "--filter-l7=discord,stun"], "actions": ["--out-range=-d10", "--payload=stun,discord_ip_discovery", "--lua-desync=fake:blob=sample_stun", "--lua-desync=fake:blob=sample_discord:repeats=3"]}
+  ]
+}

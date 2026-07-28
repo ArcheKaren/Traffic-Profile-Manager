@@ -1,0 +1,61 @@
+name: Сообщение об ошибке
+description: Сообщить о воспроизводимой проблеме менеджера, профиля, теста или очистки.
+title: "[Ошибка]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Перед публикацией удалите из журналов имена пользователей, частные имена узлов, IP-адреса и другие идентификаторы.
+  - type: input
+    id: version
+    attributes:
+      label: Версия
+      description: Значение из файла VERSION или тег релиза.
+    validations:
+      required: true
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Версия Windows
+      options:
+        - Windows 11
+        - Windows 10
+        - Другая
+    validations:
+      required: true
+  - type: input
+    id: profile
+    attributes:
+      label: Профиль
+      placeholder: "1 - Verified baseline"
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема
+      description: Что произошло и какой результат ожидался?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Как воспроизвести
+      placeholder: |
+        1. Запустить Manager.bat
+        2. Выбрать ...
+        3. Получить ...
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Диагностика
+      description: Приложите статус, результат валидации или очищенную строку отчёта.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Предварительные проверки
+      options:
+        - label: Проверено без другого VPN, прокси или приложения на WinDivert.
+        - label: Из отчёта удалены личные идентификаторы.
+          required: true

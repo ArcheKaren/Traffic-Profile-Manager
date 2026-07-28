@@ -1,0 +1,29 @@
+name: Проверка проекта
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  project-checks:
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Получение исходников
+        uses: actions/checkout@v4
+
+      - name: Аудит исходников
+        shell: powershell
+        run: |
+          .\tools\test-project.ps1 -SkipRuntimeCheck
+
+      - name: Изолированный smoke-тест контроллера
+        shell: powershell
+        run: |
+          .\tests\smoke.ps1

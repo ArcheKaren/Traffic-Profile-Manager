@@ -1,0 +1,3 @@
+# Custom IPv4, IPv6, and CIDR values. Add one entry per line.
+# 203.0.113.10
+# 2001:db8::/32

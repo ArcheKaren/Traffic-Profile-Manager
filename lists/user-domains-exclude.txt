@@ -1,0 +1,2 @@
+# Custom domain exclusions. One domain per line.
+# example.org

@@ -1,0 +1,114 @@
+УВЕДОМЛЕНИЯ О СТОРОННИХ КОМПОНЕНТАХ
+===================================
+
+Этот файл перечисляет сторонние проекты, материалы которых использовались при
+разработке или входят в переносимую сборку.
+
+Собственный код и документация Traffic Profile Manager распространяются по
+лицензии MIT, текст которой находится в корневом файле LICENSE. Условия ниже
+относятся только к соответствующим сторонним компонентам и материалам.
+
+Юридический текст лицензии MIT ниже сохранён на английском языке без перевода.
+Перевод пояснений не заменяет оригинальные условия лицензий.
+
+
+1. zapret / zapret2
+-------------------
+
+Проект использует winws2, Lua-библиотеки и другие runtime-компоненты проекта
+bol-van/zapret:
+
+https://github.com/bol-van/zapret
+https://github.com/bol-van/zapret-win-bundle
+
+zapret распространяется по лицензии MIT.
+
+
+2. Flowseal/zapret-discord-youtube
+----------------------------------
+
+При разработке использовались и адаптировались материалы проекта
+Flowseal/zapret-discord-youtube, включая примеры стратегий, структуру списков,
+подход к BAT-меню и тестированию, а также отдельные бинарные образцы пакетов:
+
+https://github.com/Flowseal/zapret-discord-youtube
+
+Проект Flowseal/zapret-discord-youtube распространяется по лицензии MIT.
+Сохранена атрибуция авторам bol-van и Flowseal.
+
+
+ОРИГИНАЛЬНЫЙ ТЕКСТ ЛИЦЕНЗИИ MIT
+-------------------------------
+
+MIT License
+
+Copyright (c) 2016-2026 bol-van
+Copyright (c) 2024-2026 Flowseal
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+3. WinDivert
+------------
+
+Переносимая сборка содержит WinDivert.dll и WinDivert64.sys без изменений:
+
+https://github.com/basil00/WinDivert
+
+WinDivert распространяется по выбору пользователя на условиях:
+
+1. GNU Lesser General Public License (LGPL), версия 3; или
+2. GNU General Public License (GPL), версия 2.
+
+Оригинальный текст и исходный код:
+
+https://github.com/basil00/WinDivert/blob/master/LICENSE
+https://github.com/basil00/WinDivert
+
+
+4. Cygwin
+---------
+
+Переносимая сборка содержит неизменённый cygwin1.dll проекта Cygwin:
+
+https://cygwin.com/
+
+Cygwin API library распространяется по GNU Lesser General Public License
+версии 3 или новее с Cygwin Linking Exception.
+
+Официальные условия, исключение и соответствующий исходный код:
+
+https://cygwin.com/licensing.html
+https://cygwin.com/git/?p=newlib-cygwin.git
+
+
+5. Обязанности при распространении
+----------------------------------
+
+При публикации сборки необходимо:
+
+1. сохранять исходные уведомления об авторских правах и лицензиях;
+2. не удалять этот файл из переносимого архива;
+3. соблюдать условия WinDivert и Cygwin;
+4. обеспечивать требуемую соответствующими лицензиями доступность исходного
+   кода сторонних компонентов;
+5. не заявлять авторство на материалы bol-van или Flowseal.
+
+Это инвентаризация компонентов, а не юридическая консультация. Ответственность
+за выполнение условий лицензий несёт распространитель конкретной сборки.
