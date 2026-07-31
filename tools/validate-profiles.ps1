@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Continue"
+$ErrorActionPreference = "Stop"
 $appRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 . (Join-Path $appRoot "tools\profile-library.ps1")
 $profiles = @(Get-TrafficProfiles $appRoot -IncludeInvalid)
@@ -60,3 +60,4 @@ if ($failed) {
 Write-Host "All profiles passed validation." -ForegroundColor Green
 $results.Add("All profiles passed validation.")
 [IO.File]::WriteAllLines($validationPath, $results.ToArray())
+exit 0

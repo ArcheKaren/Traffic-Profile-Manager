@@ -4,6 +4,7 @@ param(
     [string]$OutputRoot = "",
     [string]$ArchivePath = "",
     [switch]$SkipTests,
+    [switch]$SkipRuntimeProvenanceCheck,
     [switch]$NoDirectorySync
 )
 
@@ -31,7 +32,13 @@ $buildContainer = Join-Path $releaseRoot (
 $staging = Join-Path $buildContainer "TrafficProfileManager"
 $archiveTemporary = Join-Path `
     (Split-Path -Parent $archive) `
-    ("{0}.build.zip" -f [IO.Path]::GetFileNameWithoutExtension($archive))
+    ("{0}.{1}.{2}.build.zip" -f @(
+        [IO.Path]::GetFileNameWithoutExtension($archive),
+        $PID,
+        [Guid]::NewGuid().ToString("N")
+    ))
+$sourceManifestPath = Join-Path $projectRoot "runtime\SOURCE.json"
+$releaseManifestName = ".tpm-release-manifest.json"
 
 function Copy-ProjectFile([string]$RelativePath) {
     $source = Join-Path $projectRoot $RelativePath
@@ -63,6 +70,50 @@ function Find-FirstFile(
             -ErrorAction SilentlyContinue |
             Select-Object -First 1
     ).FullName
+}
+
+function Get-VerifiedRuntimeFile([string]$Key) {
+    if (-not (Test-Path -LiteralPath $sourceManifestPath -PathType Leaf)) {
+        throw "Runtime provenance manifest was not found: $sourceManifestPath"
+    }
+    $manifest = Get-Content -Raw -LiteralPath $sourceManifestPath |
+        ConvertFrom-Json
+    if (
+        [string]$manifest.source -notmatch "^https://" -or
+        [string]$manifest.archiveSha256 -notmatch "^[A-Fa-f0-9]{64}$"
+    ) {
+        throw "runtime\SOURCE.json contains invalid source metadata."
+    }
+    $entry = $manifest.runtimeFiles.$Key
+    if (-not $entry) {
+        throw "runtime\SOURCE.json has no '$Key' file entry."
+    }
+    $relativePath = [string]$entry.path
+    if ([IO.Path]::IsPathRooted($relativePath)) {
+        throw "Runtime provenance path must be relative: $relativePath"
+    }
+    $runtimeRoot = [IO.Path]::GetFullPath($runtimeSource).TrimEnd("\")
+    $candidate = [IO.Path]::GetFullPath(
+        (Join-Path $runtimeRoot $relativePath)
+    )
+    if (-not $candidate.StartsWith(
+        $runtimeRoot + "\",
+        [StringComparison]::OrdinalIgnoreCase
+    )) {
+        throw "Runtime provenance path leaves RuntimeRoot: $relativePath"
+    }
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+        throw "Verified runtime component was not found: $relativePath"
+    }
+    $file = Get-Item -LiteralPath $candidate
+    if ([int64]$entry.length -ne $file.Length) {
+        throw "Runtime component size mismatch: $relativePath"
+    }
+    $actualHash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash
+    if ($actualHash -ine [string]$entry.sha256) {
+        throw "Runtime component SHA-256 mismatch: $relativePath"
+    }
+    return $candidate
 }
 
 function Copy-RuntimeFile(
@@ -190,6 +241,97 @@ function New-DeterministicArchive(
     }
 }
 
+function Write-ReleaseManifest {
+    $managedFiles = @(
+        Get-ChildItem -LiteralPath $staging -File -Recurse |
+            ForEach-Object {
+                $_.FullName.Substring($staging.Length + 1).Replace("\", "/")
+            } |
+            Where-Object { $_ -ne $releaseManifestName } |
+            Sort-Object
+    )
+    $manifest = [ordered]@{
+        schemaVersion = 1
+        managedFiles = $managedFiles
+    }
+    [IO.File]::WriteAllText(
+        (Join-Path $staging $releaseManifestName),
+        ($manifest | ConvertTo-Json -Depth 5) + [Environment]::NewLine,
+        [Text.UTF8Encoding]::new($false)
+    )
+}
+
+function Assert-NoReleaseReparsePoint(
+    [string]$Path,
+    [string]$Root
+) {
+    $resolvedRoot = [IO.Path]::GetFullPath($Root).TrimEnd("\")
+    $current = Get-Item -LiteralPath $Path -Force
+    while ($current -and $current.FullName.Length -ge $resolvedRoot.Length) {
+        if ($current.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Release cleanup path contains a reparse point: $($current.FullName)"
+        }
+        if ($current.FullName -ieq $resolvedRoot) { return }
+        $parent = Split-Path -Parent $current.FullName
+        if (-not $parent -or -not (Test-Path -LiteralPath $parent)) { break }
+        $current = Get-Item -LiteralPath $parent -Force
+    }
+    throw "Release cleanup path is outside the output directory: $Path"
+}
+
+function Remove-StaleManagedFiles([string]$Directory) {
+    $resolvedOutput = [IO.Path]::GetFullPath($Directory).TrimEnd("\")
+    Assert-NoReleaseReparsePoint $resolvedOutput $resolvedOutput
+    $manifestPath = Join-Path $resolvedOutput $releaseManifestName
+    $currentManifest = Get-Content -Raw -LiteralPath (
+        Join-Path $staging $releaseManifestName
+    ) | ConvertFrom-Json
+    $current = New-Object "Collections.Generic.HashSet[string]" (
+        [StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($path in @($currentManifest.managedFiles)) {
+        [void]$current.Add(([string]$path).Replace("/", "\"))
+    }
+
+    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+        $previous = Get-Content -Raw -LiteralPath $manifestPath |
+            ConvertFrom-Json
+        if ([int]$previous.schemaVersion -ne 1) {
+            throw "Unsupported release manifest in output directory."
+        }
+        foreach ($relativePathValue in @($previous.managedFiles)) {
+            $relativePath = ([string]$relativePathValue).Replace("/", "\")
+            if ($current.Contains($relativePath)) { continue }
+            $candidate = [IO.Path]::GetFullPath(
+                (Join-Path $resolvedOutput $relativePath)
+            )
+            if (-not $candidate.StartsWith(
+                $resolvedOutput + "\",
+                [StringComparison]::OrdinalIgnoreCase
+            )) {
+                throw "Unsafe path in previous release manifest: $relativePath"
+            }
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                Assert-NoReleaseReparsePoint $candidate $resolvedOutput
+                Remove-Item -LiteralPath $candidate -Force
+            }
+        }
+    } else {
+        foreach ($legacyLauncher in @(
+            Get-ChildItem -LiteralPath $resolvedOutput -Filter "*.bat" -File |
+                Where-Object Name -Match "^\d+\s+-\s+"
+        )) {
+            $relativePath = $legacyLauncher.Name
+            if (-not $current.Contains($relativePath)) {
+                Assert-NoReleaseReparsePoint `
+                    $legacyLauncher.FullName `
+                    $resolvedOutput
+                Remove-Item -LiteralPath $legacyLauncher.FullName -Force
+            }
+        }
+    }
+}
+
 $rootFiles = @(
     "VERSION"
     "LICENSE"
@@ -232,6 +374,12 @@ $releaseToolFiles = @(
     "watch-benchmark.ps1"
     "watch-service-mappings.ps1"
 )
+$runtimeCreatedUserLists = @(
+    "lists\user-domains.txt"
+    "lists\user-domains-exclude.txt"
+    "lists\user-ips.txt"
+    "lists\user-ips-exclude.txt"
+)
 
 try {
     New-Item -ItemType Directory -Path $staging -Force | Out-Null
@@ -242,7 +390,10 @@ try {
     foreach ($directory in @("assets", "config\profiles", "lists")) {
         Get-ChildItem -LiteralPath (Join-Path $projectRoot $directory) -File |
             ForEach-Object {
-                Copy-ProjectFile (Join-Path $directory $_.Name)
+                $relativePath = Join-Path $directory $_.Name
+                if ($relativePath -notin $runtimeCreatedUserLists) {
+                    Copy-ProjectFile $relativePath
+                }
             }
     }
     Get-ChildItem `
@@ -261,22 +412,31 @@ try {
     foreach ($name in $releaseToolFiles) {
         Copy-ProjectFile (Join-Path "tools" $name)
     }
+    Copy-ProjectFile "runtime\SOURCE.json"
 
     foreach ($directory in @("logs", "state", "test-results")) {
         New-Item -ItemType Directory -Path (Join-Path $staging $directory) -Force |
             Out-Null
     }
 
-    $winws = Find-FirstFile @(
-        "zapret-win-bundle-master\blockcheck\zapret2\nfq2\winws2.exe"
-        "zapret-win-bundle-master\zapret-winws\winws2.exe"
-        "winws2.exe"
-    ) "winws2.exe"
+    $winws = if ($SkipRuntimeProvenanceCheck) {
+        Find-FirstFile @(
+            "zapret-win-bundle-master\blockcheck\zapret2\nfq2\winws2.exe"
+            "zapret-win-bundle-master\zapret-winws\winws2.exe"
+            "winws2.exe"
+        ) "winws2.exe"
+    } else {
+        Get-VerifiedRuntimeFile "winws2"
+    }
     $winwsDirectory = if ($winws) { Split-Path -Parent $winws } else { "" }
-    $winDivertDll = if ($winwsDirectory) {
+    $winDivertDll = if (-not $SkipRuntimeProvenanceCheck) {
+        Get-VerifiedRuntimeFile "winDivertDll"
+    } elseif ($winwsDirectory) {
         Join-Path $winwsDirectory "WinDivert.dll"
     } else { "" }
-    $winDivertDriver = if ($winwsDirectory) {
+    $winDivertDriver = if (-not $SkipRuntimeProvenanceCheck) {
+        Get-VerifiedRuntimeFile "winDivertDriver"
+    } elseif ($winwsDirectory) {
         Join-Path $winwsDirectory "WinDivert64.sys"
     } else { "" }
     if (-not (Test-Path -LiteralPath $winDivertDll -PathType Leaf)) {
@@ -290,8 +450,14 @@ try {
     } elseif ($winwsDirectory) {
         Join-Path $winwsDirectory "lua"
     } else { "" }
-    $luaLib = if ($luaRoot) { Join-Path $luaRoot "zapret-lib.lua" } else { "" }
-    $luaAntidpi = if ($luaRoot) {
+    $luaLib = if (-not $SkipRuntimeProvenanceCheck) {
+        Get-VerifiedRuntimeFile "luaLib"
+    } elseif ($luaRoot) {
+        Join-Path $luaRoot "zapret-lib.lua"
+    } else { "" }
+    $luaAntidpi = if (-not $SkipRuntimeProvenanceCheck) {
+        Get-VerifiedRuntimeFile "luaAntidpi"
+    } elseif ($luaRoot) {
         Join-Path $luaRoot "zapret-antidpi.lua"
     } else { "" }
     if (-not (Test-Path -LiteralPath $luaLib -PathType Leaf)) {
@@ -300,11 +466,15 @@ try {
     if (-not (Test-Path -LiteralPath $luaAntidpi -PathType Leaf)) {
         $luaAntidpi = Find-FirstFile @("lua\zapret-antidpi.lua") "zapret-antidpi.lua"
     }
-    $cygwin = Find-FirstFile @(
-        "zapret-win-bundle-master\cygwin\bin\cygwin1.dll"
-        "zapret-win-bundle-master\zapret-winws\cygwin1.dll"
-        "cygwin1.dll"
-    ) "cygwin1.dll"
+    $cygwin = if ($SkipRuntimeProvenanceCheck) {
+        Find-FirstFile @(
+            "zapret-win-bundle-master\cygwin\bin\cygwin1.dll"
+            "zapret-win-bundle-master\zapret-winws\cygwin1.dll"
+            "cygwin1.dll"
+        ) "cygwin1.dll"
+    } else {
+        Get-VerifiedRuntimeFile "cygwin"
+    }
 
     Copy-RuntimeFile $winws "runtime\winws2.exe"
     Copy-RuntimeFile $winDivertDll "runtime\WinDivert.dll"
@@ -312,11 +482,28 @@ try {
     Copy-RuntimeFile $cygwin "runtime\cygwin1.dll"
     Copy-RuntimeFile $luaLib "runtime\lua\zapret-lib.lua"
     Copy-RuntimeFile $luaAntidpi "runtime\lua\zapret-antidpi.lua"
+    Write-ReleaseManifest
 
     if (-not $SkipTests) {
-        & (Join-Path $projectRoot "tools\test-project.ps1") -AppRoot $staging
+        if ($SkipRuntimeProvenanceCheck) {
+            Write-Warning (
+                "Runtime provenance and packaged runtime checks were explicitly " +
+                "disabled for this diagnostic build."
+            )
+            & (Join-Path $projectRoot "tools\test-project.ps1") `
+                -AppRoot $staging `
+                -SkipRuntimeCheck
+        } else {
+            & (Join-Path $projectRoot "tools\test-project.ps1") -AppRoot $staging
+        }
         if ($LASTEXITCODE -ne 0) {
             throw "Release validation failed."
+        }
+    }
+    foreach ($relativePath in $runtimeCreatedUserLists) {
+        $generatedPath = Join-Path $staging $relativePath
+        if (Test-Path -LiteralPath $generatedPath -PathType Leaf) {
+            Remove-Item -LiteralPath $generatedPath -Force
         }
     }
 
@@ -331,6 +518,7 @@ try {
 
     if (-not $NoDirectorySync) {
         New-Item -ItemType Directory -Path $output -Force | Out-Null
+        Remove-StaleManagedFiles $output
         Get-ChildItem -LiteralPath $staging -File -Recurse |
             ForEach-Object {
                 $relativePath = $_.FullName.Substring($staging.Length + 1)

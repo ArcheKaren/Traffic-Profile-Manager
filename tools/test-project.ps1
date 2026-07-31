@@ -51,6 +51,7 @@ $requiredPaths = @(
     "Manager.bat"
     "zapretctl.ps1"
     "manage-network-mappings.ps1"
+    "runtime\SOURCE.json"
     "config\config.json"
     "config\game-filters"
     "config\profiles"
@@ -431,16 +432,16 @@ if (-not @($failures | Where-Object { $_ -match "endpoint" }).Count) {
 }
 
 if (-not $SkipRuntimeCheck) {
-    $runtimeFiles = @(
-        "runtime\winws2.exe"
-        "runtime\WinDivert.dll"
-        "runtime\WinDivert64.sys"
-        "runtime\cygwin1.dll"
-        "runtime\lua\zapret-lib.lua"
-        "runtime\lua\zapret-antidpi.lua"
-    )
+    $runtimeFiles = [ordered]@{
+        "winws2" = "runtime\winws2.exe"
+        "winDivertDll" = "runtime\WinDivert.dll"
+        "winDivertDriver" = "runtime\WinDivert64.sys"
+        "cygwin" = "runtime\cygwin1.dll"
+        "luaLib" = "runtime\lua\zapret-lib.lua"
+        "luaAntidpi" = "runtime\lua\zapret-antidpi.lua"
+    }
     $missingRuntime = @(
-        $runtimeFiles |
+        $runtimeFiles.Values |
             Where-Object {
                 -not (Test-Path -LiteralPath (Get-ProjectPath $_) -PathType Leaf)
             }
@@ -450,7 +451,35 @@ if (-not $SkipRuntimeCheck) {
             Add-Failure "Runtime component is missing: $path"
         }
     } else {
-        Add-Success "Portable runtime components"
+        try {
+            $sourceManifest = Get-Content -Raw -LiteralPath (
+                Get-ProjectPath "runtime\SOURCE.json"
+            ) | ConvertFrom-Json
+            foreach ($item in $runtimeFiles.GetEnumerator()) {
+                $property = $sourceManifest.runtimeFiles.PSObject.Properties[
+                    [string]$item.Key
+                ]
+                $expected = if ($property) { $property.Value } else { $null }
+                if (
+                    -not $expected -or
+                    [string]$expected.sha256 -notmatch "^[A-Fa-f0-9]{64}$"
+                ) {
+                    throw "Missing provenance entry '$($item.Key)'."
+                }
+                $path = Get-ProjectPath ([string]$item.Value)
+                $file = Get-Item -LiteralPath $path
+                if (
+                    $file.Length -ne [int64]$expected.length -or
+                    (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine
+                        [string]$expected.sha256
+                ) {
+                    throw "Runtime provenance mismatch: $($item.Value)"
+                }
+            }
+            Add-Success "Portable runtime components and provenance"
+        } catch {
+            Add-Failure "Runtime provenance validation failed: $($_.Exception.Message)"
+        }
     }
 }
 
@@ -464,3 +493,4 @@ Write-Host ""
 Write-Host (
     "All project checks passed. Warnings: {0}." -f $warnings.Count
 ) -ForegroundColor Green
+exit 0

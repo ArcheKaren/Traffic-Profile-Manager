@@ -3,5 +3,43 @@
   "repository": "https://github.com/bol-van/zapret-win-bundle",
   "downloadedAt": "2026-07-27",
   "archiveSha256": "075604D8689A31E84CEA1D189B11FBE4ED5634948D8264EEB983A7CB3877602E",
-  "extractedRoot": "zapret-win-bundle-master"
+  "extractedRoot": "zapret-win-bundle-master",
+  "runtimeFiles": {
+    "winws2": {
+      "path": "zapret-win-bundle-master\\blockcheck\\zapret2\\nfq2\\winws2.exe",
+      "releasePath": "winws2.exe",
+      "length": 655360,
+      "sha256": "31D3188D63757D89A22A16EE397F9BFFAE5E6150E86F00160AB9C50D3A107D4D"
+    },
+    "winDivertDll": {
+      "path": "zapret-win-bundle-master\\blockcheck\\zapret2\\nfq2\\WinDivert.dll",
+      "releasePath": "WinDivert.dll",
+      "length": 47616,
+      "sha256": "06C3F201B815A5798816E8C15B925B28F3C38E5ABA31EFEDEC10AF9E598CE723"
+    },
+    "winDivertDriver": {
+      "path": "zapret-win-bundle-master\\blockcheck\\zapret2\\nfq2\\WinDivert64.sys",
+      "releasePath": "WinDivert64.sys",
+      "length": 94144,
+      "sha256": "8DA085332782708D8767BCACE5327A6EC7283C17CFB85E40B03CD2323A90DDC2"
+    },
+    "cygwin": {
+      "path": "zapret-win-bundle-master\\cygwin\\bin\\cygwin1.dll",
+      "releasePath": "cygwin1.dll",
+      "length": 2954293,
+      "sha256": "103104A52E5293CE418944725DF19E2BF81AD9269B9A120D71D39028E821499B"
+    },
+    "luaLib": {
+      "path": "zapret-win-bundle-master\\blockcheck\\zapret2\\lua\\zapret-lib.lua",
+      "releasePath": "lua\\zapret-lib.lua",
+      "length": 92695,
+      "sha256": "2740B1BC0E728C4283846DF94783844082EABD503CE1F86E3429159E1B4E8DE3"
+    },
+    "luaAntidpi": {
+      "path": "zapret-win-bundle-master\\blockcheck\\zapret2\\lua\\zapret-antidpi.lua",
+      "releasePath": "lua\\zapret-antidpi.lua",
+      "length": 51791,
+      "sha256": "9EF64F894D920E2CEEA05707899F67B206D5009BA762EB5265F409264B34214C"
+    }
+  }
 }

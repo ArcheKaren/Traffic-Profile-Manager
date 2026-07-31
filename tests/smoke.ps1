@@ -24,6 +24,39 @@ try {
     $env:ZAPRETCTL_HOME = $resolvedTest
 
     Invoke-Cli @("init") | Out-Null
+    $userListPaths = @(
+        "lists\user-domains.txt"
+        "lists\user-domains-exclude.txt"
+        "lists\user-ips.txt"
+        "lists\user-ips-exclude.txt"
+    )
+    $preservedUserList = Join-Path $resolvedTest "lists\user-domains.txt"
+    $preservedContent = (
+        "# Existing custom list." + [Environment]::NewLine +
+        "# It must not be overwritten." + [Environment]::NewLine
+    )
+    [IO.File]::WriteAllText(
+        $preservedUserList,
+        $preservedContent,
+        [Text.UTF8Encoding]::new($false)
+    )
+    foreach ($relativePath in $userListPaths | Select-Object -Skip 1) {
+        Remove-Item -LiteralPath (Join-Path $resolvedTest $relativePath) -Force
+    }
+    Invoke-Cli @("profile", "list") | Out-Null
+    foreach ($relativePath in $userListPaths) {
+        if (
+            -not (Test-Path -LiteralPath (
+                Join-Path $resolvedTest $relativePath
+            ) -PathType Leaf)
+        ) {
+            throw "Missing user list was not initialized: $relativePath"
+        }
+    }
+    if ([IO.File]::ReadAllText($preservedUserList) -ne $preservedContent) {
+        throw "Existing user list was overwritten during initialization."
+    }
+
     $idn = -join ([char[]](0x043F, 0x0440, 0x0438, 0x043C, 0x0435, 0x0440, 0x002E, 0x0440, 0x0444))
     Invoke-Cli @("domain", "add", $idn) | Out-Null
     Invoke-Cli @("domain", "add", $idn) | Out-Null
@@ -58,9 +91,44 @@ try {
             -Destination (Join-Path $resolvedTest "assets\$asset")
     }
 
+    $missingBeforeRender = Join-Path (
+        Join-Path $resolvedTest "lists"
+    ) "user-domains-exclude.txt"
+    Remove-Item -LiteralPath $missingBeforeRender -Force
+    $preservedBeforeRender = [IO.File]::ReadAllBytes($preservedUserList)
     $render = (Invoke-Cli @("render")) -join "`n"
+    if (-not (Test-Path -LiteralPath $missingBeforeRender -PathType Leaf)) {
+        throw "Profile rendering did not initialize a missing user list."
+    }
+    if (
+        -not [Linq.Enumerable]::SequenceEqual(
+            [byte[]]$preservedBeforeRender,
+            [byte[]][IO.File]::ReadAllBytes($preservedUserList)
+        )
+    ) {
+        throw "Profile rendering changed an existing user list."
+    }
     foreach ($expected in @("--hostlist=", "--hostlist-exclude=", "--ipset=", "--new=http-ip")) {
         if (-not $render.Contains($expected)) { throw "Rendered command misses $expected." }
+    }
+    . (Join-Path $projectRoot "tools\profile-library.ps1")
+    $profilePath = Join-Path (
+        Join-Path $resolvedTest "config\profiles"
+    ) "strategy-wa-pc-pos1.json"
+    $unsafeProfile = Get-Content -Raw -LiteralPath $profilePath |
+        ConvertFrom-Json
+    $unsafeProfile.blobs[0].path = "lists\domains.txt"
+    $outsideAssetRejected = $false
+    try {
+        [void](Test-TrafficProfileDefinition `
+            $unsafeProfile `
+            $profilePath `
+            $resolvedTest)
+    } catch {
+        $outsideAssetRejected = $true
+    }
+    if (-not $outsideAssetRejected) {
+        throw "Profile accepted a blob outside the assets directory."
     }
 
     $mappingTool = Join-Path $projectRoot "manage-network-mappings.ps1"
@@ -198,6 +266,7 @@ try {
     Copy-Item `
         -LiteralPath (Join-Path $projectRoot "tests\fixtures\hosts-test.txt") `
         -Destination $testHosts
+    $hostsAcl = (Get-Acl -LiteralPath $testHosts).Sddl
     & powershell.exe `
         -NoLogo `
         -NoProfile `
@@ -219,6 +288,27 @@ try {
     )) {
         throw "Enabled game filter mapping was not added."
     }
+    & powershell.exe `
+        -NoLogo `
+        -NoProfile `
+        -ExecutionPolicy Bypass `
+        -File $mappingTool `
+        install `
+        -AppRoot $resolvedTest `
+        -HostsPath $testHosts | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Repeated mapping installation failed." }
+    $hostsContent = [IO.File]::ReadAllText($testHosts)
+    if (
+        ([regex]::Matches(
+            $hostsContent,
+            [regex]::Escape("# TrafficProfileManager Mapping BEGIN")
+        )).Count -ne 1
+    ) {
+        throw "Repeated mapping installation duplicated the managed block."
+    }
+    if ((Get-Acl -LiteralPath $testHosts).Sddl -ne $hostsAcl) {
+        throw "Mapping installation changed the hosts ACL."
+    }
 
     & powershell.exe `
         -NoLogo `
@@ -235,6 +325,41 @@ try {
     }
     if (-not $hostsContent.Contains("203.0.113.10 unrelated.example")) {
         throw "Mapping cleanup changed an unrelated hosts entry."
+    }
+    if ((Get-Acl -LiteralPath $testHosts).Sddl -ne $hostsAcl) {
+        throw "Mapping cleanup changed the hosts ACL."
+    }
+    $leftovers = @(
+        Get-ChildItem -LiteralPath (Split-Path -Parent $testHosts) -File |
+            Where-Object {
+                $_.Name -like "hosts.*.tmp" -or
+                $_.Name -like "hosts.*.backup"
+            }
+    )
+    if ($leftovers.Count) {
+        throw "Atomic hosts update left temporary or backup files behind."
+    }
+
+    $utf16Hosts = Join-Path $resolvedTest "hosts-utf16"
+    [IO.File]::WriteAllText(
+        $utf16Hosts,
+        "127.0.0.1 localhost`r`n",
+        [Text.UnicodeEncoding]::new($false, $true)
+    )
+    & $mappingTool install -AppRoot $resolvedTest -HostsPath $utf16Hosts |
+        Out-Null
+    & $mappingTool cleanup -AppRoot $resolvedTest -HostsPath $utf16Hosts |
+        Out-Null
+    $utf16Bytes = [IO.File]::ReadAllBytes($utf16Hosts)
+    if (
+        $utf16Bytes.Length -lt 2 -or
+        $utf16Bytes[0] -ne 0xFF -or
+        $utf16Bytes[1] -ne 0xFE
+    ) {
+        throw "Hosts encoding was not preserved."
+    }
+    if (-not [IO.File]::ReadAllText($utf16Hosts).Contains("localhost")) {
+        throw "UTF-16 hosts content was not preserved."
     }
 
     $conflictPath = Join-Path $resolvedTest "config\game-filters\conflict-game"

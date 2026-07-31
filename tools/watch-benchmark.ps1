@@ -1,12 +1,27 @@
 param(
     [Parameter(Mandatory = $true)]
-    [int]$ControllerPid
+    [int]$ControllerPid,
+
+    [Parameter(Mandatory = $true)]
+    [int64]$ControllerStartTicks
 )
 
 $ErrorActionPreference = "SilentlyContinue"
 $appRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 
-while (Get-Process -Id $ControllerPid -ErrorAction SilentlyContinue) {
+while ($true) {
+    $controller = Get-Process -Id $ControllerPid -ErrorAction SilentlyContinue
+    if (-not $controller) { break }
+    try {
+        if (
+            $controller.StartTime.ToUniversalTime().Ticks -ne
+                $ControllerStartTicks
+        ) {
+            break
+        }
+    } catch {
+        break
+    }
     Start-Sleep -Milliseconds 250
 }
 

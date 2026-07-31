@@ -100,10 +100,15 @@ function Update-RunningMappings {
         return
     }
     try {
-        & (Join-Path $PSScriptRoot "..\manage-network-mappings.ps1") `
-            refresh `
-            -AppRoot $appRoot |
-            Out-Host
+        if ($service -and $service.Status -eq "Running") {
+            & (Join-Path $PSScriptRoot "service-control.ps1") refresh |
+                Out-Host
+        } else {
+            & (Join-Path $PSScriptRoot "..\manage-network-mappings.ps1") `
+                refresh `
+                -AppRoot $appRoot |
+                Out-Host
+        }
         Write-Host "Running mappings refreshed." -ForegroundColor Green
         Write-Host (
             "Restart the active profile or service to apply domain, IP and " +

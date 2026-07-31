@@ -366,8 +366,13 @@ try {
     $watcherInfo = [Diagnostics.ProcessStartInfo]::new()
     $watcherInfo.FileName = "powershell.exe"
     $watcherInfo.Arguments = (
-        '-NoLogo -NoProfile -ExecutionPolicy Bypass -File "{0}" -ControllerPid {1}' -f
-        $watcherPath, $PID
+        (
+            '-NoLogo -NoProfile -ExecutionPolicy Bypass -File "{0}" ' +
+            '-ControllerPid {1} -ControllerStartTicks {2}'
+        ) -f
+        $watcherPath,
+        $PID,
+        (Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks
     )
     $watcherInfo.UseShellExecute = $true
     $watcherInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden

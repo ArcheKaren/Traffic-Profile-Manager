@@ -3,7 +3,16 @@ param(
     [int]$ControllerPid,
 
     [Parameter(Mandatory = $true)]
+    [int64]$ControllerStartTicks,
+
+    [Parameter(Mandatory = $true)]
     [int]$WinwsPid,
+
+    [Parameter(Mandatory = $true)]
+    [int64]$WinwsStartTicks,
+
+    [Parameter(Mandatory = $true)]
+    [string]$WinwsPath,
 
     [string]$ReadyPath = "",
 
@@ -15,9 +24,33 @@ $appRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $started = [DateTime]::UtcNow
 $nextRefresh = [DateTime]::UtcNow
 
+function Get-MatchingProcess(
+    [int]$ProcessId,
+    [int64]$StartTicks,
+    [string]$ExpectedPath = ""
+) {
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if (-not $process) { return $null }
+    try {
+        if ($process.StartTime.ToUniversalTime().Ticks -ne $StartTicks) {
+            return $null
+        }
+        if (
+            $ExpectedPath -and
+            [IO.Path]::GetFullPath($process.Path) -ine
+                [IO.Path]::GetFullPath($ExpectedPath)
+        ) {
+            return $null
+        }
+        return $process
+    } catch {
+        return $null
+    }
+}
+
 while (
-    (Get-Process -Id $ControllerPid -ErrorAction SilentlyContinue) -and
-    (Get-Process -Id $WinwsPid -ErrorAction SilentlyContinue)
+    (Get-MatchingProcess $ControllerPid $ControllerStartTicks) -and
+    (Get-MatchingProcess $WinwsPid $WinwsStartTicks $WinwsPath)
 ) {
     $mappingReady = -not $ReadyPath -or
         (Test-Path -LiteralPath $ReadyPath -PathType Leaf)
@@ -36,8 +69,8 @@ while (
 }
 
 if (
-    -not (Get-Process -Id $ControllerPid -ErrorAction SilentlyContinue) -and
-    (Get-Process -Id $WinwsPid -ErrorAction SilentlyContinue)
+    -not (Get-MatchingProcess $ControllerPid $ControllerStartTicks) -and
+    (Get-MatchingProcess $WinwsPid $WinwsStartTicks $WinwsPath)
 ) {
     Stop-Process -Id $WinwsPid -Force -ErrorAction SilentlyContinue
 }
@@ -60,6 +93,22 @@ if (Test-Path -LiteralPath $windowsPidPath -PathType Leaf) {
             -Force `
             -ErrorAction SilentlyContinue
     }
+}
+$identityPath = Join-Path $appRoot "state\winws2.identity.json"
+if (Test-Path -LiteralPath $identityPath -PathType Leaf) {
+    try {
+        $identity = Get-Content -Raw -LiteralPath $identityPath |
+            ConvertFrom-Json
+        if (
+            [int]$identity.pid -eq $WinwsPid -and
+            [int64]$identity.startTimeUtcTicks -eq $WinwsStartTicks
+        ) {
+            Remove-Item `
+                -LiteralPath $identityPath `
+                -Force `
+                -ErrorAction SilentlyContinue
+        }
+    } catch {}
 }
 if ($ReadyPath -and (Test-Path -LiteralPath $ReadyPath)) {
     Remove-Item -LiteralPath $ReadyPath -Force -ErrorAction SilentlyContinue

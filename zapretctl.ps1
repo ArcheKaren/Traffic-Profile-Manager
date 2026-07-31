@@ -23,8 +23,28 @@ $script:AppRoot = if ($env:ZAPRETCTL_HOME) {
 } else {
     Split-Path -Parent $MyInvocation.MyCommand.Path
 }
+$script:UserListTemplates = [ordered]@{
+    "lists\user-domains.txt" = @(
+        "# Custom domains. Add one domain per line."
+        "# example.org"
+    )
+    "lists\user-domains-exclude.txt" = @(
+        "# Custom domain exclusions. One domain per line."
+        "# example.org"
+    )
+    "lists\user-ips.txt" = @(
+        "# Custom IPv4, IPv6, and CIDR values. Add one entry per line."
+        "# 203.0.113.10"
+        "# 2001:db8::/32"
+    )
+    "lists\user-ips-exclude.txt" = @(
+        "# Custom IP/CIDR exclusions. One entry per line."
+        "# 203.0.113.0/24"
+    )
+}
 
 . (Join-Path $PSScriptRoot "tools\game-filter-library.ps1")
+. (Join-Path $PSScriptRoot "tools\profile-library.ps1")
 
 function Get-AppPath([string]$RelativePath) {
     return [IO.Path]::GetFullPath((Join-Path $script:AppRoot $RelativePath))
@@ -54,6 +74,76 @@ function Write-JsonFile([string]$Path, $Value) {
     Write-AtomicText $Path (($Value | ConvertTo-Json -Depth 20) + [Environment]::NewLine)
 }
 
+function Initialize-UserLists {
+    foreach ($item in $script:UserListTemplates.GetEnumerator()) {
+        $path = Get-AppPath $item.Key
+        if (Test-Path -LiteralPath $path -PathType Leaf) { continue }
+
+        $parent = Split-Path -Parent $path
+        if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+            New-Item -ItemType Directory -Path $parent -Force | Out-Null
+        }
+        $temporary = "{0}.{1}.{2}.tmp" -f @(
+            $path,
+            $PID,
+            [Guid]::NewGuid().ToString("N")
+        )
+        try {
+            [IO.File]::WriteAllLines(
+                $temporary,
+                [string[]]$item.Value,
+                $script:Utf8NoBom
+            )
+            try {
+                [IO.File]::Move($temporary, $path)
+            } catch [IO.IOException] {
+                if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+                    throw
+                }
+            }
+        } finally {
+            if (Test-Path -LiteralPath $temporary -PathType Leaf) {
+                Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
+function Write-ProcessIdentity(
+    [Diagnostics.Process]$Process,
+    [string]$Executable
+) {
+    $identity = [ordered]@{
+        pid = $Process.Id
+        startTimeUtcTicks = $Process.StartTime.ToUniversalTime().Ticks
+        executable = [IO.Path]::GetFullPath($Executable)
+    }
+    Write-JsonFile (Get-AppPath "state\winws2.identity.json") $identity
+}
+
+function Remove-ProcessIdentity(
+    [int]$ExpectedPid = 0,
+    [int64]$ExpectedStartTicks = 0
+) {
+    $identityPath = Get-AppPath "state\winws2.identity.json"
+    if (-not (Test-Path -LiteralPath $identityPath -PathType Leaf)) { return }
+    if ($ExpectedPid -gt 0) {
+        try {
+            $identity = Read-JsonFile $identityPath
+            if ([int]$identity.pid -ne $ExpectedPid) { return }
+            if (
+                $ExpectedStartTicks -gt 0 -and
+                [int64]$identity.startTimeUtcTicks -ne $ExpectedStartTicks
+            ) {
+                return
+            }
+        } catch {
+            return
+        }
+    }
+    Remove-Item -LiteralPath $identityPath -Force -ErrorAction SilentlyContinue
+}
+
 function Read-JsonFile([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) {
         throw "File not found: $Path. Run 'zapretctl init' first."
@@ -81,21 +171,17 @@ function Initialize-App {
             runtimePath = ""
             allowAllWithoutTargets = $false
             autoHostlist = $false
-            debug = $true
+            debug = $false
         }
         Write-JsonFile $configPath $config
     }
 
     $listHeaders = [ordered]@{
         "lists\domains.txt" = @("# Domains handled by zapret2. One domain per line.", "# example.org")
-        "lists\user-domains.txt" = @("# Custom domains. One domain per line.", "# example.org")
         "lists\domains-exclude.txt" = @("# Excluded domains. One domain per line.")
-        "lists\user-domains-exclude.txt" = @("# Custom domain exclusions. One domain per line.", "# example.org")
         "lists\domains-auto.txt" = @("# Auto-detected domains. Do not edit while winws2 is running.")
         "lists\ips.txt" = @("# IPv4, IPv6 or CIDR handled by zapret2. One entry per line.", "# 203.0.113.0/24")
-        "lists\user-ips.txt" = @("# Custom IPv4, IPv6, and CIDR values. One entry per line.", "# 203.0.113.0/24")
         "lists\ips-exclude.txt" = @("# Excluded IP/CIDR entries. One entry per line.")
-        "lists\user-ips-exclude.txt" = @("# Custom IP/CIDR exclusions. One entry per line.", "# 203.0.113.0/24")
     }
     foreach ($item in $listHeaders.GetEnumerator()) {
         $path = Get-AppPath $item.Key
@@ -103,6 +189,7 @@ function Initialize-App {
             Write-AtomicLines $path $item.Value
         }
     }
+    Initialize-UserLists
 
     Write-Host "Ready: $script:AppRoot"
     Write-Host "Add a target: zapretctl domain add example.org"
@@ -113,6 +200,7 @@ function Ensure-Initialized {
     if (-not (Test-Path -LiteralPath (Get-AppPath "config\config.json"))) {
         throw "The project is not initialized. Run 'zapretctl init'."
     }
+    Initialize-UserLists
 }
 
 function Get-MeaningfulLines([string]$Path) {
@@ -301,7 +389,11 @@ function Save-Config($Config) {
 
 function Get-ActiveProfile {
     $config = Get-Config
-    $path = Get-AppPath "config\profiles\$($config.activeProfile).json"
+    $name = [string]$config.activeProfile
+    if ($name -notmatch "^[a-zA-Z0-9_-]{1,64}$") {
+        throw "config.json contains an invalid active profile name."
+    }
+    $path = Get-AppPath "config\profiles\$name.json"
     return Read-JsonFile $path
 }
 
@@ -330,7 +422,11 @@ function Invoke-ProfileCommand([string[]]$InputArgs) {
         }
         "show" {
             $profile = if ($InputArgs.Count -ge 2) {
-                Read-JsonFile (Get-AppPath "config\profiles\$($InputArgs[1]).json")
+                $name = [string]$InputArgs[1]
+                if ($name -notmatch "^[a-zA-Z0-9_-]{1,64}$") {
+                    throw "Invalid profile name."
+                }
+                Read-JsonFile (Get-AppPath "config\profiles\$name.json")
             } else {
                 Get-ActiveProfile
             }
@@ -545,12 +641,21 @@ function Add-GameTransportArguments(
 
 function Build-WinwsArguments([bool]$DryRun, [string]$ProfileName = "") {
     $config = Get-Config
-    $profile = if ($ProfileName) {
+    $selectedProfile = if ($ProfileName) {
         if ($ProfileName -notmatch "^[a-zA-Z0-9_-]+$") { throw "Invalid profile name." }
-        Read-JsonFile (Get-AppPath "config\profiles\$ProfileName.json")
+        $ProfileName
     } else {
-        Get-ActiveProfile
+        [string]$config.activeProfile
     }
+    if ($selectedProfile -notmatch "^[a-zA-Z0-9_-]{1,64}$") {
+        throw "Invalid profile name."
+    }
+    $profilePath = Get-AppPath "config\profiles\$selectedProfile.json"
+    $profile = Read-JsonFile $profilePath
+    [void](Test-TrafficProfileDefinition `
+        $profile `
+        $profilePath `
+        $script:AppRoot)
     $gameTransports = @(
         Get-EnabledGameFilterTransports $script:AppRoot
     )
@@ -714,8 +819,10 @@ function Start-ZapretForeground([string]$ProfileName) {
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $false
     $process = [Diagnostics.Process]::Start($startInfo)
+    $processStartTicks = $process.StartTime.ToUniversalTime().Ticks
     $windowsPidPath = Get-AppPath "state\winws2.windows.pid"
     Write-AtomicText $windowsPidPath ([string]$process.Id)
+    Write-ProcessIdentity $process $executable
     $mappingReadyPath = Get-AppPath "state\mapping-ready-$($process.Id).flag"
     if (Test-Path -LiteralPath $mappingReadyPath) {
         Remove-Item -LiteralPath $mappingReadyPath -Force
@@ -734,8 +841,16 @@ function Start-ZapretForeground([string]$ProfileName) {
             $watcherPath,
             "-ControllerPid",
             [string]$PID,
+            "-ControllerStartTicks",
+            [string]((
+                Get-Process -Id $PID
+            ).StartTime.ToUniversalTime().Ticks),
             "-WinwsPid",
             [string]$process.Id,
+            "-WinwsStartTicks",
+            [string]$processStartTicks,
+            "-WinwsPath",
+            $executable,
             "-ReadyPath",
             $mappingReadyPath
         )) {
@@ -784,6 +899,7 @@ function Start-ZapretForeground([string]$ProfileName) {
                 Remove-Item -LiteralPath $windowsPidPath -Force
             }
         }
+        Remove-ProcessIdentity $process.Id $processStartTicks
     }
 }
 
@@ -820,7 +936,35 @@ function Get-RunningPid {
     $storedPid = 0
     if (-not [int]::TryParse((Get-Content -Raw -LiteralPath $pidPath).Trim(), [ref]$storedPid)) { return $null }
     $process = Get-Process -Id $storedPid -ErrorAction SilentlyContinue
-    if ($process -and $process.ProcessName -eq "winws2") { return $storedPid }
+    if (-not $process -or $process.ProcessName -ne "winws2") { return $null }
+    $identityPath = Get-AppPath "state\winws2.identity.json"
+    if (Test-Path -LiteralPath $identityPath -PathType Leaf) {
+        try {
+            $identity = Read-JsonFile $identityPath
+            $actualPath = [IO.Path]::GetFullPath($process.Path)
+            $actualTicks = $process.StartTime.ToUniversalTime().Ticks
+            if (
+                [int]$identity.pid -eq $storedPid -and
+                [int64]$identity.startTimeUtcTicks -eq $actualTicks -and
+                $actualPath -ieq [IO.Path]::GetFullPath(
+                    [string]$identity.executable
+                )
+            ) {
+                return $storedPid
+            }
+        } catch {
+            return $null
+        }
+        return $null
+    }
+    $expectedExecutable = Find-RuntimeExecutable
+    if (
+        $expectedExecutable -and
+        [IO.Path]::GetFullPath($process.Path) -ieq
+            [IO.Path]::GetFullPath($expectedExecutable)
+    ) {
+        return $storedPid
+    }
     return $null
 }
 
@@ -852,6 +996,7 @@ function Start-Zapret([bool]$DryRun, [string]$ProfileName = "") {
         $startInfo.RedirectStandardError = $true
     }
     $process = [Diagnostics.Process]::Start($startInfo)
+    $processStartTicks = $process.StartTime.ToUniversalTime().Ticks
     if ($DryRun) {
         $standardOutput = $process.StandardOutput.ReadToEnd()
         $standardError = $process.StandardError.ReadToEnd()
@@ -868,6 +1013,7 @@ function Start-Zapret([bool]$DryRun, [string]$ProfileName = "") {
     }
     $windowsPidPath = Get-AppPath "state\winws2.windows.pid"
     Write-AtomicText $windowsPidPath ([string]$process.Id)
+    Write-ProcessIdentity $process $executable
     Start-Sleep -Milliseconds 500
     if (-not $process.HasExited) {
         Write-Host "winws2 started, Windows PID $($process.Id)"
@@ -878,6 +1024,7 @@ function Start-Zapret([bool]$DryRun, [string]$ProfileName = "") {
         Start-Sleep -Milliseconds 100
         if ($process.HasExited -and $process.ExitCode -ne 0) {
             if (Test-Path -LiteralPath $windowsPidPath) { Remove-Item -LiteralPath $windowsPidPath -Force }
+            Remove-ProcessIdentity $process.Id $processStartTicks
             throw "winws2 exited with code $($process.ExitCode). Check logs\winws2.log."
         }
         if (-not $process.HasExited) {
@@ -886,6 +1033,7 @@ function Start-Zapret([bool]$DryRun, [string]$ProfileName = "") {
         }
     }
     if (Test-Path -LiteralPath $windowsPidPath) { Remove-Item -LiteralPath $windowsPidPath -Force }
+    Remove-ProcessIdentity $process.Id $processStartTicks
     throw "winws2 exited immediately after startup. Check logs\winws2.log."
 }
 
@@ -895,7 +1043,8 @@ function Stop-Zapret {
     if (-not $running) {
         foreach ($pidPath in @(
             (Get-AppPath "state\winws2.pid"),
-            (Get-AppPath "state\winws2.windows.pid")
+            (Get-AppPath "state\winws2.windows.pid"),
+            (Get-AppPath "state\winws2.identity.json")
         )) {
             if (Test-Path -LiteralPath $pidPath) {
                 Remove-Item -LiteralPath $pidPath -Force
@@ -908,7 +1057,8 @@ function Stop-Zapret {
     Start-Sleep -Milliseconds 300
     foreach ($pidPath in @(
         (Get-AppPath "state\winws2.pid"),
-        (Get-AppPath "state\winws2.windows.pid")
+        (Get-AppPath "state\winws2.windows.pid"),
+        (Get-AppPath "state\winws2.identity.json")
     )) {
         if (Test-Path -LiteralPath $pidPath) { Remove-Item -LiteralPath $pidPath -Force }
     }
@@ -946,6 +1096,7 @@ function Adopt-ZapretProcess {
         throw "Multiple winws2 processes were found and cannot be selected safely."
     }
     Write-AtomicText (Get-AppPath "state\winws2.windows.pid") ([string]$candidates[0].Id)
+    Write-ProcessIdentity $candidates[0] $candidates[0].Path
     Write-Host "Process registered, Windows PID $($candidates[0].Id)"
 }
 
