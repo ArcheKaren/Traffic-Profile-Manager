@@ -11,6 +11,30 @@ function Invoke-Cli([string[]]$CliArgs) {
     return @($output)
 }
 
+function Get-AclSemanticSignature([string]$Path) {
+    $acl = Get-Acl -LiteralPath $Path
+    $rules = @(
+        $acl.Access |
+            ForEach-Object {
+                "{0}|{1}|{2}|{3}|{4}|{5}" -f @(
+                    $_.IdentityReference.Value,
+                    $_.AccessControlType,
+                    [int]$_.FileSystemRights,
+                    [int]$_.InheritanceFlags,
+                    [int]$_.PropagationFlags,
+                    $_.IsInherited
+                )
+            } |
+            Sort-Object
+    )
+    return @(
+        [string]$acl.Owner
+        [string]$acl.Group
+        [string]$acl.AreAccessRulesProtected
+        $rules
+    ) -join [Environment]::NewLine
+}
+
 $resolvedProject = [IO.Path]::GetFullPath($projectRoot)
 $resolvedTest = [IO.Path]::GetFullPath($testRoot)
 if (-not $resolvedTest.StartsWith($resolvedProject + [IO.Path]::DirectorySeparatorChar)) {
@@ -266,7 +290,7 @@ try {
     Copy-Item `
         -LiteralPath (Join-Path $projectRoot "tests\fixtures\hosts-test.txt") `
         -Destination $testHosts
-    $hostsAcl = (Get-Acl -LiteralPath $testHosts).Sddl
+    $hostsAcl = Get-AclSemanticSignature $testHosts
     & powershell.exe `
         -NoLogo `
         -NoProfile `
@@ -306,7 +330,7 @@ try {
     ) {
         throw "Repeated mapping installation duplicated the managed block."
     }
-    if ((Get-Acl -LiteralPath $testHosts).Sddl -ne $hostsAcl) {
+    if ((Get-AclSemanticSignature $testHosts) -ne $hostsAcl) {
         throw "Mapping installation changed the hosts ACL."
     }
 
@@ -326,7 +350,7 @@ try {
     if (-not $hostsContent.Contains("203.0.113.10 unrelated.example")) {
         throw "Mapping cleanup changed an unrelated hosts entry."
     }
-    if ((Get-Acl -LiteralPath $testHosts).Sddl -ne $hostsAcl) {
+    if ((Get-AclSemanticSignature $testHosts) -ne $hostsAcl) {
         throw "Mapping cleanup changed the hosts ACL."
     }
     $leftovers = @(
