@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/ArcheKaren/Traffic-Profile-Manager/main/config/schemas/traffic-profile.schema.json",
+  "title": "Traffic Profile Manager traffic profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "interception",
+    "rules"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "order": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "interception": {
+      "$ref": "#/$defs/interception"
+    },
+    "blobs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/blob"
+      }
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/rule"
+      }
+    }
+  },
+  "$defs": {
+    "portExpression": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 4096
+    },
+    "argument": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 4096,
+      "pattern": "^--[^\\r\\n]+$"
+    },
+    "interception": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tcpOut": {
+          "$ref": "#/$defs/portExpression"
+        },
+        "udpOut": {
+          "$ref": "#/$defs/portExpression"
+        },
+        "tcpIn": {
+          "$ref": "#/$defs/portExpression"
+        },
+        "udpIn": {
+          "$ref": "#/$defs/portExpression"
+        },
+        "rawParts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      }
+    },
+    "blob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "path"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]+$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "actions"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "match"
+          ]
+        },
+        {
+          "required": [
+            "matchGroup"
+          ]
+        }
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "first",
+            "all",
+            "targets"
+          ]
+        },
+        "match": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/argument"
+          }
+        },
+        "matchGroup": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/argument"
+          }
+        }
+      }
+    }
+  }
+}

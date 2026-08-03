@@ -8,6 +8,7 @@ param(
         "disable",
         "create",
         "transport",
+        "universal",
         "validate",
         "open"
     )]
@@ -61,10 +62,91 @@ function Save-EnabledIds([string[]]$Ids) {
 }
 
 function Write-AtomicJson([string]$Path, [object]$Value) {
+    $parent = Split-Path -Parent $Path
+    New-Item -ItemType Directory -Path $parent -Force | Out-Null
     $text = ($Value | ConvertTo-Json -Depth 10) + [Environment]::NewLine
     $temporary = "$Path.$PID.tmp"
     [IO.File]::WriteAllText($temporary, $text, $utf8NoBom)
     Move-Item -LiteralPath $temporary -Destination $Path -Force
+}
+
+function Get-RequestedTransportState([object]$Current) {
+    $mode = $TransportMode.Trim().ToLowerInvariant()
+    if (-not $mode) {
+        Write-Host ""
+        Write-Host "Select transport mode:"
+        Write-Host "  0. Off"
+        Write-Host "  1. TCP and UDP"
+        Write-Host "  2. TCP only"
+        Write-Host "  3. UDP only"
+        $modeChoice = (Read-Host "Mode (0-3, current: $($Current.Mode))").Trim()
+        $mode = switch ($modeChoice) {
+            "" { $Current.Mode }
+            "0" { "off" }
+            "1" { "all" }
+            "2" { "tcp" }
+            "3" { "udp" }
+            default { throw "Select a mode from 0 to 3." }
+        }
+    }
+    if ($mode -notin @("off", "tcp", "udp", "all")) {
+        throw "Transport mode must be off, tcp, udp or all."
+    }
+
+    $preset = $TransportPreset.Trim().ToLowerInvariant()
+    if (-not $preset) {
+        if ($mode -eq "off") {
+            $preset = if ($Current.Preset) { $Current.Preset } else { "balanced" }
+        } else {
+            $presetChoice = (
+                Read-Host "Preset: 1=Balanced, 2=Extended (current: $($Current.Preset))"
+            ).Trim()
+            $preset = switch ($presetChoice) {
+                "" { $Current.Preset }
+                "1" { "balanced" }
+                "2" { "extended" }
+                default { throw "Select preset 1 or 2." }
+            }
+        }
+    }
+
+    $defaultTcp = if ($Current.TcpPorts) {
+        $Current.TcpPorts
+    } else { "1024-65535" }
+    $tcp = $TcpPorts.Trim()
+    if (-not $tcp) { $tcp = $defaultTcp }
+    if ($mode -in @("tcp", "all") -and -not $TcpPorts.Trim()) {
+        $tcp = (Read-Host "TCP ports (default: $defaultTcp)").Trim()
+        if (-not $tcp) { $tcp = $defaultTcp }
+    }
+
+    $defaultUdp = if ($Current.UdpPorts) {
+        $Current.UdpPorts
+    } else { "1024-65535" }
+    $udp = $UdpPorts.Trim()
+    if (-not $udp) { $udp = $defaultUdp }
+    if ($mode -in @("udp", "all") -and -not $UdpPorts.Trim()) {
+        $udp = (Read-Host "UDP ports (default: $defaultUdp)").Trim()
+        if (-not $udp) { $udp = $defaultUdp }
+    }
+
+    $defaultFake = if ($Current.UdpFake) {
+        $Current.UdpFake
+    } else { "assets\ACTIVE_GAME_UDP.bin" }
+    $fake = $UdpFake.Trim()
+    if (-not $fake) { $fake = $defaultFake }
+    if ($mode -in @("udp", "all") -and -not $UdpFake.Trim()) {
+        $fake = (Read-Host "UDP fake path (default: $defaultFake)").Trim()
+        if (-not $fake) { $fake = $defaultFake }
+    }
+
+    return [pscustomobject][ordered]@{
+        mode = $mode
+        preset = $preset
+        tcpPorts = $tcp
+        udpPorts = $udp
+        udpFake = $fake
+    }
 }
 
 function Update-RunningMappings {
@@ -150,88 +232,7 @@ function Set-GameFilterTransport([string]$Id) {
         }
     }
 
-    $mode = $TransportMode.Trim().ToLowerInvariant()
-    if (-not $mode) {
-        Write-Host ""
-        Write-Host "Select transport mode:"
-        Write-Host "  0. Off"
-        Write-Host "  1. TCP and UDP"
-        Write-Host "  2. TCP only"
-        Write-Host "  3. UDP only"
-        $modeChoice = (Read-Host "Mode (0-3, current: $($current.Mode))").Trim()
-        $mode = switch ($modeChoice) {
-            "" { $current.Mode }
-            "0" { "off" }
-            "1" { "all" }
-            "2" { "tcp" }
-            "3" { "udp" }
-            default { throw "Select a mode from 0 to 3." }
-        }
-    }
-    if ($mode -notin @("off", "tcp", "udp", "all")) {
-        throw "Transport mode must be off, tcp, udp or all."
-    }
-
-    $preset = $TransportPreset.Trim().ToLowerInvariant()
-    if (-not $preset) {
-        if ($mode -eq "off") {
-            $preset = if ($current.Preset) {
-                $current.Preset
-            } else { "balanced" }
-        } else {
-            $presetChoice = (
-                Read-Host "Preset: 1=Balanced, 2=Extended (current: $($current.Preset))"
-            ).Trim()
-            $preset = switch ($presetChoice) {
-                "" { $current.Preset }
-                "1" { "balanced" }
-                "2" { "extended" }
-                default { throw "Select preset 1 or 2." }
-            }
-        }
-    }
-
-    $defaultTcp = if ($current.TcpPorts) {
-        $current.TcpPorts
-    } else { "1024-65535" }
-    $tcp = $TcpPorts.Trim()
-    if (-not $tcp) {
-        $tcp = $defaultTcp
-    }
-    if ($mode -in @("tcp", "all") -and -not $TcpPorts.Trim()) {
-        $tcp = (Read-Host "TCP ports (default: $defaultTcp)").Trim()
-        if (-not $tcp) { $tcp = $defaultTcp }
-    }
-    $defaultUdp = if ($current.UdpPorts) {
-        $current.UdpPorts
-    } else { "1024-65535" }
-    $udp = $UdpPorts.Trim()
-    if (-not $udp) {
-        $udp = $defaultUdp
-    }
-    if ($mode -in @("udp", "all") -and -not $UdpPorts.Trim()) {
-        $udp = (Read-Host "UDP ports (default: $defaultUdp)").Trim()
-        if (-not $udp) { $udp = $defaultUdp }
-    }
-    $defaultFake = if ($current.UdpFake) {
-        $current.UdpFake
-    } else { "assets\ACTIVE_GAME_UDP.bin" }
-    $fake = $UdpFake.Trim()
-    if (-not $fake) {
-        $fake = $defaultFake
-    }
-    if ($mode -in @("udp", "all") -and -not $UdpFake.Trim()) {
-        $fake = (Read-Host "UDP fake path (default: $defaultFake)").Trim()
-        if (-not $fake) { $fake = $defaultFake }
-    }
-
-    $transport = [ordered]@{
-        mode = $mode
-        preset = $preset
-        tcpPorts = $tcp
-        udpPorts = $udp
-        udpFake = $fake
-    }
+    $transport = Get-RequestedTransportState $current
     $candidate = [pscustomobject]@{ transport = [pscustomobject]$transport }
     [void](Get-GameFilterTransport $candidate $appRoot $filter.IpsPath)
 
@@ -248,8 +249,32 @@ function Set-GameFilterTransport([string]$Id) {
     Write-Host (
         "{0}: transport {1} ({2})" -f
         $filter.DisplayName,
-        $mode,
-        $preset
+        $transport.mode,
+        $transport.preset
+    ) -ForegroundColor Green
+    Write-Host (
+        "Restart the active profile or service to apply transport changes."
+    ) -ForegroundColor Yellow
+}
+
+function Set-UniversalGameTransport {
+    $current = Get-UniversalGameTransport $appRoot
+    $transport = Get-RequestedTransportState $current
+    $candidate = [pscustomobject]@{ transport = $transport }
+    [void](Get-GameFilterTransport $candidate $appRoot "" -AllowEmptyIps)
+    $state = [ordered]@{
+        schemaVersion = 1
+        mode = $transport.mode
+        preset = $transport.preset
+        tcpPorts = $transport.tcpPorts
+        udpPorts = $transport.udpPorts
+        udpFake = $transport.udpFake
+    }
+    Write-AtomicJson (Get-UniversalGameTransportStatePath $appRoot) $state
+    Write-Host (
+        "Universal game transport: {0} ({1})" -f
+        $transport.mode,
+        $transport.preset
     ) -ForegroundColor Green
     Write-Host (
         "Restart the active profile or service to apply transport changes."
@@ -442,9 +467,37 @@ function Invoke-InteractiveManager {
         )
         Write-Host "Mappings remain active only while a profile/service is active."
         Write-Host ""
+        try {
+            $universal = Get-UniversalGameTransport $appRoot
+            $universalMode = if ($universal.Mode -eq "all") {
+                "TCP+UDP"
+            } else {
+                $universal.Mode.ToUpperInvariant()
+            }
+            $universalColor = if ($universal.Mode -eq "off") {
+                "DarkGray"
+            } else {
+                "Yellow"
+            }
+            Write-Host (
+                "Universal transport: $universalMode, " +
+                "$($universal.Preset), TCP $($universal.TcpPorts), " +
+                "UDP $($universal.UdpPorts)"
+            ) -ForegroundColor $universalColor
+            if ($universal.Mode -ne "off") {
+                Write-Host (
+                    "  Applies to all destination IPs on these ports."
+                ) -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "Universal transport: INVALID" -ForegroundColor Red
+            Write-Host "  $($_.Exception.Message)" -ForegroundColor Red
+        }
+        Write-Host ""
         $filters = @(Show-GameFilters -Detailed)
         Write-Host ""
         Write-Host "Enter a number to enable or disable a filter."
+        Write-Host "[U] Configure universal TCP/UDP transport"
         Write-Host "[C] Create a custom filter"
         Write-Host "[T] Configure transport mode"
         Write-Host "[E] Open a filter folder"
@@ -454,6 +507,13 @@ function Invoke-InteractiveManager {
         Write-Host ""
         $choice = (Read-Host "Select an option").Trim()
         if ($choice -eq "0") { return }
+        if ($choice -match "^[uU]$") {
+            try { Set-UniversalGameTransport } catch {
+                Write-Host $_.Exception.Message -ForegroundColor Red
+            }
+            Read-Host "Press Enter to continue" | Out-Null
+            continue
+        }
         if ($choice -match "^[cC]$") {
             try { New-GameFilter } catch {
                 Write-Host $_.Exception.Message -ForegroundColor Red
@@ -534,6 +594,7 @@ switch ($Action) {
     "disable" { Set-GameFilterEnabled $FilterId $false }
     "create" { New-GameFilter }
     "transport" { Set-GameFilterTransport $FilterId }
+    "universal" { Set-UniversalGameTransport }
     "validate" { Invoke-Validation }
     "open" {
         Start-Process -FilePath "explorer.exe" `

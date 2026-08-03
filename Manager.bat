@@ -41,22 +41,22 @@ echo.
 set "menu_choice="
 set /p "menu_choice=Select an option: "
 
-if "%menu_choice%"=="1" goto run_profile
-if "%menu_choice%"=="2" goto install_service
-if "%menu_choice%"=="3" goto remove_service
-if "%menu_choice%"=="4" goto show_status
-if "%menu_choice%"=="5" goto edit_targets
-if "%menu_choice%"=="6" goto edit_exclusions
-if "%menu_choice%"=="7" goto test_profiles
-if "%menu_choice%"=="8" goto validate_profiles
-if "%menu_choice%"=="9" goto background_controls
-if "%menu_choice%"=="10" goto edit_profile
-if "%menu_choice%"=="11" goto create_profile
-if "%menu_choice%"=="12" goto open_profiles
-if "%menu_choice%"=="13" goto game_filters
-if "%menu_choice%"=="14" goto domain_packs
-if "%menu_choice%"=="15" goto application_diagnostics
-if "%menu_choice%"=="0" exit /b
+if "!menu_choice!"=="1" goto run_profile
+if "!menu_choice!"=="2" goto install_service
+if "!menu_choice!"=="3" goto remove_service
+if "!menu_choice!"=="4" goto show_status
+if "!menu_choice!"=="5" goto edit_targets
+if "!menu_choice!"=="6" goto edit_exclusions
+if "!menu_choice!"=="7" goto test_profiles
+if "!menu_choice!"=="8" goto validate_profiles
+if "!menu_choice!"=="9" goto background_controls
+if "!menu_choice!"=="10" goto edit_profile
+if "!menu_choice!"=="11" goto create_profile
+if "!menu_choice!"=="12" goto open_profiles
+if "!menu_choice!"=="13" goto game_filters
+if "!menu_choice!"=="14" goto domain_packs
+if "!menu_choice!"=="15" goto application_diagnostics
+if "!menu_choice!"=="0" exit /b
 goto menu
 
 :run_profile
@@ -92,8 +92,8 @@ echo [0] Back
 echo.
 set "list_choice="
 set /p "list_choice=Select a list: "
-if "%list_choice%"=="1" start "" notepad.exe "%~dp0lists\user-domains.txt"
-if "%list_choice%"=="2" start "" notepad.exe "%~dp0lists\user-ips.txt"
+if "!list_choice!"=="1" start "" notepad.exe "%~dp0lists\user-domains.txt"
+if "!list_choice!"=="2" start "" notepad.exe "%~dp0lists\user-ips.txt"
 goto menu
 
 :edit_exclusions
@@ -104,8 +104,8 @@ echo [0] Back
 echo.
 set "list_choice="
 set /p "list_choice=Select a list: "
-if "%list_choice%"=="1" start "" notepad.exe "%~dp0lists\user-domains-exclude.txt"
-if "%list_choice%"=="2" start "" notepad.exe "%~dp0lists\user-ips-exclude.txt"
+if "!list_choice!"=="1" start "" notepad.exe "%~dp0lists\user-domains-exclude.txt"
+if "!list_choice!"=="2" start "" notepad.exe "%~dp0lists\user-ips-exclude.txt"
 goto menu
 
 :test_profiles

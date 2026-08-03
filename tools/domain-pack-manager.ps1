@@ -169,7 +169,7 @@ function Show-Manager {
             $displayName = (Read-Host "Display name").Trim()
             $createdPath = New-UserDomainPack $id $displayName
             Start-Process notepad.exe -ArgumentList @(
-                (Join-Path $createdPath "domains.txt")
+                '"{0}"' -f (Join-Path $createdPath "domains.txt")
             )
             Read-Host "Press Enter to continue" | Out-Null
             continue
@@ -177,7 +177,7 @@ function Show-Manager {
         if ($choice -match "^[Oo]$") {
             $userPackRoot = Join-Path $appRoot "lists\user-packs"
             New-Item -ItemType Directory -Path $userPackRoot -Force | Out-Null
-            Start-Process explorer.exe -ArgumentList @($userPackRoot)
+            Start-Process explorer.exe -ArgumentList @('"{0}"' -f $userPackRoot)
             continue
         }
         if ($choice -match "^[Rr]$") {

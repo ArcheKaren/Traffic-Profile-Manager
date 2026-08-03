@@ -6,10 +6,10 @@ end_of_line = lf
 insert_final_newline = true
 trim_trailing_whitespace = true
 
-[*.{bat,cmd,ps1}]
+[*.{bat,cmd,ps1,psm1,psd1}]
 end_of_line = crlf
 
-[*.{ps1,json,yml,yaml}]
+[*.{ps1,psm1,psd1,json,yml,yaml}]
 indent_style = space
 indent_size = 4
 

@@ -20,7 +20,14 @@ $benchmarkHostList = Join-Path $stateRoot "benchmark-domains.txt"
 $script:controller = $null
 $script:managedMappingsInstalled = $false
 
-. (Join-Path $appRoot "tools\profile-library.ps1")
+Import-Module (
+    Join-Path $appRoot `
+        "modules\TrafficProfileManager.Profile\TrafficProfileManager.Profile.psd1"
+) -ErrorAction Stop
+Import-Module (
+    Join-Path $appRoot `
+        "modules\TrafficProfileManager.Core\TrafficProfileManager.Core.psd1"
+) -ErrorAction Stop
 
 $discoveredProfiles = @(Get-TrafficProfiles $appRoot -IncludeInvalid)
 $invalidProfiles = @($discoveredProfiles | Where-Object { -not $_.Valid })
@@ -35,12 +42,6 @@ $profileCatalog = @(
             }
         }
 )
-
-function Test-IsAdministrator {
-    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
-    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-}
 
 function Read-Targets {
     if (-not (Test-Path -LiteralPath $targetPath -PathType Leaf)) {
@@ -86,13 +87,20 @@ function Stop-ActiveProfile {
 
 function Start-Profile([string]$ProfileId) {
     Stop-ActiveProfile
-    $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = "powershell.exe"
-    $startInfo.Arguments = '-NoLogo -NoProfile -ExecutionPolicy Bypass -File "{0}" foreground "{1}"' -f `
-        (Join-Path $appRoot "zapretctl.ps1"), $ProfileId
-    $startInfo.WorkingDirectory = $appRoot
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $true
+    $startInfo = New-TpmProcessStartInfo `
+        -FilePath "powershell.exe" `
+        -ArgumentList @(
+            "-NoLogo",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            (Join-Path $appRoot "zapretctl.ps1"),
+            "foreground",
+            $ProfileId
+        ) `
+        -WorkingDirectory $appRoot `
+        -CreateNoWindow
     $script:controller = [Diagnostics.Process]::Start($startInfo)
 
     $pidPath = Join-Path $stateRoot "winws2.windows.pid"
@@ -146,22 +154,32 @@ function Start-Profile([string]$ProfileId) {
     throw "Profile $ProfileId did not become ready."
 }
 
-function Get-CurlArguments($Target) {
-    return (
-        '--location --silent --show-error --output NUL ' +
-        '--write-out "%{{http_code}}" --connect-timeout 4 ' +
-        '--max-time {0} --user-agent "TrafficProfileManager/1.0" "{1}"'
-    ) -f $TimeoutSeconds, $Target.Url.Replace('"', '%22')
+function Get-CurlArgumentList($Target) {
+    return @(
+        "--location",
+        "--silent",
+        "--show-error",
+        "--output",
+        "NUL",
+        "--write-out",
+        "%{http_code}",
+        "--connect-timeout",
+        "4",
+        "--max-time",
+        [string]$TimeoutSeconds,
+        "--user-agent",
+        "TrafficProfileManager/1.0",
+        [string]$Target.Url
+    )
 }
 
 function New-CurlStartInfo($Target) {
-    $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = "curl.exe"
-    $startInfo.Arguments = Get-CurlArguments $Target
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
+    $startInfo = New-TpmProcessStartInfo `
+        -FilePath "curl.exe" `
+        -ArgumentList (Get-CurlArgumentList $Target) `
+        -CreateNoWindow `
+        -RedirectStandardOutput `
+        -RedirectStandardError
     try {
         $oemEncoding = [Text.Encoding]::GetEncoding(
             [Globalization.CultureInfo]::CurrentCulture.TextInfo.OEMCodePage
@@ -318,7 +336,7 @@ function Invoke-TargetChecks($Targets) {
 }
 
 try {
-    if (-not (Test-IsAdministrator)) {
+    if (-not (Test-TpmIsAdministrator)) {
         throw "Run Test Profiles.bat and approve the administrator prompt."
     }
     if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
@@ -363,19 +381,22 @@ try {
     & (Join-Path $appRoot "manage-network-mappings.ps1") install | Out-Host
     $script:managedMappingsInstalled = $true
     $watcherPath = Join-Path $appRoot "tools\watch-benchmark.ps1"
-    $watcherInfo = [Diagnostics.ProcessStartInfo]::new()
-    $watcherInfo.FileName = "powershell.exe"
-    $watcherInfo.Arguments = (
-        (
-            '-NoLogo -NoProfile -ExecutionPolicy Bypass -File "{0}" ' +
-            '-ControllerPid {1} -ControllerStartTicks {2}'
-        ) -f
-        $watcherPath,
-        $PID,
-        (Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks
-    )
-    $watcherInfo.UseShellExecute = $true
-    $watcherInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+    $watcherInfo = New-TpmProcessStartInfo `
+        -FilePath "powershell.exe" `
+        -ArgumentList @(
+            "-NoLogo",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            $watcherPath,
+            "-ControllerPid",
+            [string]$PID,
+            "-ControllerStartTicks",
+            [string](Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks
+        ) `
+        -UseShellExecute `
+        -WindowStyle Hidden
     [void][Diagnostics.Process]::Start($watcherInfo)
 
     Write-Host ""

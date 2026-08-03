@@ -1,6 +1,11 @@
 $script:GameFilterSchemaVersion = 2
 $script:SupportedGameFilterSchemaVersions = @(1, 2)
 
+Import-Module (
+    Join-Path (Split-Path -Parent $PSScriptRoot) `
+        "modules\TrafficProfileManager.Core\TrafficProfileManager.Core.psd1"
+) -ErrorAction Stop
+
 function Get-GameFilterRoot([string]$AppRoot) {
     return [IO.Path]::GetFullPath((Join-Path $AppRoot "config\game-filters"))
 }
@@ -9,6 +14,23 @@ function Get-GameFilterStatePath([string]$AppRoot) {
     return [IO.Path]::GetFullPath(
         (Join-Path $AppRoot "state\enabled-game-filters.txt")
     )
+}
+
+function Get-UniversalGameTransportStatePath([string]$AppRoot) {
+    return [IO.Path]::GetFullPath(
+        (Join-Path $AppRoot "state\universal-game-transport.json")
+    )
+}
+
+function Get-DefaultUniversalGameTransportState {
+    return [pscustomobject][ordered]@{
+        schemaVersion = 1
+        mode = "off"
+        preset = "balanced"
+        tcpPorts = "1024-65535"
+        udpPorts = "1024-65535"
+        udpFake = "assets\ACTIVE_GAME_UDP.bin"
+    }
 }
 
 function Get-MeaningfulGameFilterLines([string]$Path) {
@@ -114,7 +136,8 @@ function Resolve-GameFilterAssetPath(
 function Get-GameFilterTransport(
     [object]$Manifest,
     [string]$AppRoot,
-    [string]$IpsPath
+    [string]$IpsPath,
+    [switch]$AllowEmptyIps
 ) {
     $mode = "off"
     $preset = "balanced"
@@ -163,6 +186,7 @@ function Get-GameFilterTransport(
         Resolve-GameFilterAssetPath $AppRoot $udpFake
     } else { "" }
     if (
+        -not $AllowEmptyIps -and
         $mode -ne "off" -and
         (Get-MeaningfulGameFilterLines $IpsPath).Count -eq 0
     ) {
@@ -181,75 +205,35 @@ function Get-GameFilterTransport(
     }
 }
 
-function ConvertTo-GameFilterDomain(
-    [string]$Value,
-    [switch]$AllowExactPrefix
-) {
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        throw "A domain is required."
-    }
-    $domain = $Value.Trim().ToLowerInvariant()
-    $exact = $AllowExactPrefix -and $domain.StartsWith("^")
-    if ($exact) { $domain = $domain.Substring(1) }
-    $domain = $domain.TrimEnd(".")
-    if (
-        $domain.Contains("://") -or
-        $domain.Contains("/") -or
-        $domain.Contains(":") -or
-        $domain.Contains("*")
-    ) {
-        throw "'$Value' is not a domain name."
-    }
-    try {
-        $domain = (New-Object Globalization.IdnMapping).GetAscii($domain)
-    } catch {
-        throw "Invalid domain name: $Value"
-    }
-    if (
-        $domain.Length -gt 253 -or
-        $domain -notmatch "^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$"
-    ) {
-        throw "Invalid domain name: $Value"
-    }
-    foreach ($label in $domain.Split(".")) {
-        if (
-            -not $label -or
-            $label.Length -gt 63 -or
-            $label.StartsWith("-") -or
-            $label.EndsWith("-")
-        ) {
-            throw "Invalid domain name: $Value"
+function Get-UniversalGameTransport([string]$AppRoot) {
+    $path = Get-UniversalGameTransportStatePath $AppRoot
+    $state = if (Test-Path -LiteralPath $path -PathType Leaf) {
+        try {
+            Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
+        } catch {
+            throw "Universal game transport settings are invalid: $($_.Exception.Message)"
         }
+    } else {
+        Get-DefaultUniversalGameTransportState
     }
-    return $(if ($exact) { "^$domain" } else { $domain })
+    if ([int]$state.schemaVersion -ne 1) {
+        throw "Unsupported universal game transport schemaVersion '$($state.schemaVersion)'."
+    }
+    $candidate = [pscustomobject]@{ transport = $state }
+    return Get-GameFilterTransport `
+        $candidate `
+        $AppRoot `
+        "" `
+        -AllowEmptyIps
 }
 
-function ConvertTo-GameFilterIpNetwork([string]$Value) {
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        throw "An IP address or CIDR is required."
+function ConvertTo-GameFilterHostName([string]$Value) {
+    if (-not [string]::IsNullOrWhiteSpace($Value)) {
+        if ($Value.Trim().StartsWith("^")) {
+            throw "The exact-match prefix '^' is not valid in hosts.txt."
+        }
     }
-    $parts = $Value.Trim().Split("/")
-    if ($parts.Count -gt 2) { throw "Invalid IP/CIDR: $Value" }
-    $address = $null
-    if (-not [Net.IPAddress]::TryParse($parts[0], [ref]$address)) {
-        throw "Invalid IP address: $Value"
-    }
-    if ($parts.Count -eq 1) {
-        return $address.ToString().ToLowerInvariant()
-    }
-    $prefix = 0
-    $maximum = if (
-        $address.AddressFamily -eq
-            [Net.Sockets.AddressFamily]::InterNetwork
-    ) { 32 } else { 128 }
-    if (
-        -not [int]::TryParse($parts[1], [ref]$prefix) -or
-        $prefix -lt 0 -or
-        $prefix -gt $maximum
-    ) {
-        throw "Invalid CIDR prefix length: $Value"
-    }
-    return "$($address.ToString().ToLowerInvariant())/$prefix"
+    return ConvertTo-TpmDomain $Value
 }
 
 function Read-GameFilterMappings([string]$Path) {
@@ -276,7 +260,7 @@ function Read-GameFilterMappings([string]$Path) {
         }
         $normalizedAddress = $address.ToString().ToLowerInvariant()
         foreach ($rawName in $parts[1..($parts.Count - 1)]) {
-            $name = ConvertTo-GameFilterDomain $rawName
+            $name = ConvertTo-GameFilterHostName $rawName
             if (
                 $known.ContainsKey($name) -and
                 $known[$name] -ne $normalizedAddress
@@ -310,9 +294,9 @@ function Test-GameFilterList(
         if (-not $line -or $line.StartsWith("#")) { continue }
         try {
             $normalized = if ($Kind -eq "domain") {
-                ConvertTo-GameFilterDomain $line -AllowExactPrefix
+                ConvertTo-TpmDomain $line
             } else {
-                ConvertTo-GameFilterIpNetwork $line
+                ConvertTo-TpmIpNetwork $line
             }
         } catch {
             throw "$($_.Exception.Message) File: ${Path}:$lineNumber."
@@ -583,8 +567,23 @@ function Get-EnabledGameFilterMappings([string]$AppRoot) {
 }
 
 function Get-EnabledGameFilterTransports([string]$AppRoot) {
-    return @(
+    $result = New-Object "Collections.Generic.List[object]"
+    foreach ($filter in @(
         Get-EnabledGameFilters $AppRoot -ThrowOnInvalid |
             Where-Object { $_.Transport.Mode -ne "off" }
-    )
+    )) {
+        $result.Add($filter)
+    }
+    $universal = Get-UniversalGameTransport $AppRoot
+    if ($universal.Mode -ne "off") {
+        $result.Add([pscustomobject]@{
+            Id = "universal"
+            DisplayName = "Universal Game TCP/UDP"
+            IpsPath = ""
+            IpExcludesPath = ""
+            Universal = $true
+            Transport = $universal
+        })
+    }
+    return $result.ToArray()
 }

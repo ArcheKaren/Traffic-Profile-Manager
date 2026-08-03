@@ -1,6 +1,9 @@
 $ErrorActionPreference = "Stop"
 $appRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-. (Join-Path $appRoot "tools\profile-library.ps1")
+Import-Module (
+    Join-Path $appRoot `
+        "modules\TrafficProfileManager.Profile\TrafficProfileManager.Profile.psd1"
+) -ErrorAction Stop
 $profiles = @(Get-TrafficProfiles $appRoot -IncludeInvalid)
 $stateRoot = Join-Path $appRoot "state"
 New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null

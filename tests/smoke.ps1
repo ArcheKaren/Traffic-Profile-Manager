@@ -315,6 +315,51 @@ try {
         }
     }
 
+    & powershell.exe `
+        -NoLogo `
+        -NoProfile `
+        -ExecutionPolicy Bypass `
+        -File $gameManager `
+        universal `
+        -TransportMode all `
+        -TransportPreset balanced `
+        -TcpPorts 13000 `
+        -UdpPorts 23000 `
+        -UdpFake "assets\ACTIVE_GAME_UDP.bin" `
+        -RootPath $resolvedTest | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Universal game transport configuration failed."
+    }
+    $universalStatePath = Join-Path `
+        $resolvedTest `
+        "state\universal-game-transport.json"
+    if (-not (Test-Path -LiteralPath $universalStatePath -PathType Leaf)) {
+        throw "Universal game transport state was not created."
+    }
+    $universalRender = (Invoke-Cli @("render")) -join "`n"
+    foreach ($expected in @(
+        "--wf-tcp-out=80,443,2053,2083,2087,2096,8443,12000-12010,13000",
+        "--wf-udp-out=443,19294-19344,22000-22010,23000,50000-50100",
+        "--new=tpm-game-universal-tcp",
+        "--filter-tcp=13000",
+        "--new=tpm-game-universal-udp",
+        "--filter-udp=23000",
+        "--blob=tpm_game_udp_universal:"
+    )) {
+        if (-not $universalRender.Contains($expected)) {
+            throw "Rendered command misses universal transport argument: $expected"
+        }
+    }
+    $universalTcpStart = $universalRender.IndexOf("--new=tpm-game-universal-tcp")
+    $universalUdpStart = $universalRender.IndexOf("--new=tpm-game-universal-udp")
+    $universalTcpBlock = $universalRender.Substring(
+        $universalTcpStart,
+        $universalUdpStart - $universalTcpStart
+    )
+    if ($universalTcpBlock.Contains("--ipset=")) {
+        throw "Universal game transport was unexpectedly restricted to an IP list."
+    }
+
     . (Join-Path $projectRoot "tools\game-filter-library.ps1")
     if (
         (ConvertTo-GameFilterPortExpression (

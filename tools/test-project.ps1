@@ -31,18 +31,14 @@ function Get-ProjectPath([string]$RelativePath) {
     return [IO.Path]::GetFullPath((Join-Path $projectRoot $RelativePath))
 }
 
-function Get-MeaningfulLines([string]$Path) {
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @() }
-    return @(
-        Get-Content -LiteralPath $Path |
-            ForEach-Object { $_.Trim() } |
-            Where-Object { $_ -and -not $_.StartsWith("#") }
-    )
-}
-
 Write-Host "Traffic Profile Manager project checks" -ForegroundColor Cyan
 Write-Host "Root: $projectRoot"
 Write-Host ""
+
+Import-Module (
+    Get-ProjectPath `
+        "modules\TrafficProfileManager.Core\TrafficProfileManager.Core.psd1"
+) -Force -ErrorAction Stop
 
 $requiredPaths = @(
     "LICENSE"
@@ -57,6 +53,7 @@ $requiredPaths = @(
     "config\game-filters"
     "config\network-mappings"
     "config\profiles"
+    "config\schemas\traffic-profile.schema.json"
     "config\rule-groups.json"
     "docs\DIAGNOSTICS.md"
     "docs\DOMAIN_PACKS.md"
@@ -76,6 +73,14 @@ $requiredPaths = @(
     "tools\network-mapping-library.ps1"
     "tools\application-diagnostics.ps1"
     "tools\service-control.ps1"
+    "modules\TrafficProfileManager.Core\TrafficProfileManager.Core.psd1"
+    "modules\TrafficProfileManager.Controller\TrafficProfileManager.Controller.psd1"
+    "modules\TrafficProfileManager.Controller\Private\AppState.ps1"
+    "modules\TrafficProfileManager.Controller\Private\WinwsArguments.ps1"
+    "modules\TrafficProfileManager.Controller\Private\RuntimeProcess.ps1"
+    "modules\TrafficProfileManager.Profile\TrafficProfileManager.Profile.psd1"
+    "modules\TrafficProfileManager.JsonSchema\TrafficProfileManager.JsonSchema.psd1"
+    "modules\TrafficProfileManager.Operations\TrafficProfileManager.Operations.psd1"
 )
 $sourceCheckout = Test-Path -LiteralPath (
     Get-ProjectPath ".git"
@@ -126,9 +131,10 @@ $excludedRoots = @(
     "test-results\"
 )
 $scriptFiles = @(
-    Get-ChildItem -LiteralPath $projectRoot -Filter "*.ps1" -File -Recurse |
+    Get-ChildItem -LiteralPath $projectRoot -File -Recurse |
         Where-Object {
             $relative = $_.FullName.Substring($projectRoot.Length + 1)
+            $_.Extension -in @(".ps1", ".psm1", ".psd1") -and
             -not @(
                 $excludedRoots |
                     Where-Object {
@@ -163,9 +169,50 @@ if ($parseFailureCount -eq 0) {
     Add-Success "PowerShell syntax ($($scriptFiles.Count) files)"
 }
 
-$profileLibrary = Get-ProjectPath "tools\profile-library.ps1"
-if (Test-Path -LiteralPath $profileLibrary -PathType Leaf) {
-    . $profileLibrary
+$controllerEntryPath = Get-ProjectPath "zapretctl.ps1"
+$controllerEntryLines = @(Get-Content -LiteralPath $controllerEntryPath).Count
+$controllerEntryContent = Get-Content -Raw -LiteralPath $controllerEntryPath
+$controllerPrivateRoot = Get-ProjectPath `
+    "modules\TrafficProfileManager.Controller\Private"
+$oversizedControllerComponents = @(
+    Get-ChildItem -LiteralPath $controllerPrivateRoot -Filter "*.ps1" -File |
+        Where-Object { @(Get-Content -LiteralPath $_.FullName).Count -gt 500 }
+)
+if (
+    $controllerEntryLines -gt 80 -or
+    $controllerEntryContent -match '(?m)^function\s+' -or
+    $oversizedControllerComponents.Count
+) {
+    Add-Failure (
+        "Controller architecture boundary failed: zapretctl must remain a " +
+        "thin entry point and private components must stay below 500 lines."
+    )
+} else {
+    Add-Success "Thin CLI entry point and bounded controller components"
+}
+
+$cmdWrapper = Get-Content -Raw -LiteralPath (Get-ProjectPath "zapretctl.cmd")
+$managerBatch = Get-Content -Raw -LiteralPath (Get-ProjectPath "Manager.bat")
+$profileRunner = Get-Content -Raw -LiteralPath (
+    Get-ProjectPath "tools\run-profile.bat"
+)
+if (
+    $cmdWrapper.Contains("%*") -or
+    $managerBatch -match '%(?:menu_choice|list_choice)%' -or
+    $profileRunner -notmatch '\^\[A-Za-z0-9_-\]\{1,64\}\$'
+) {
+    Add-Failure (
+        "Batch argument boundary failed: wrappers must not re-expand raw " +
+        "arguments or unvalidated menu/profile input."
+    )
+} else {
+    Add-Success "Safe batch argument boundaries"
+}
+
+$profileModule = Get-ProjectPath `
+    "modules\TrafficProfileManager.Profile\TrafficProfileManager.Profile.psd1"
+if (Test-Path -LiteralPath $profileModule -PathType Leaf) {
+    Import-Module $profileModule -Force -ErrorAction Stop
     $profileFiles = @(
         Get-ChildItem `
             -LiteralPath (Get-ProjectPath "config\profiles") `
@@ -362,9 +409,14 @@ if (Test-Path -LiteralPath $profileLibrary -PathType Leaf) {
         Get-ProjectPath "tools\service-control.ps1"
     )
     foreach ($requiredSnapshotPath in @(
+        "zapretctl.ps1"
         "config\rule-groups.json"
+        "config\schemas"
         "config\network-mappings"
+        "modules"
+        "tools\profile-library.ps1"
         "tools\network-mapping-library.ps1"
+        "state\universal-game-transport.json"
     )) {
         if (-not $serviceControl.Contains($requiredSnapshotPath)) {
             Add-Failure "Protected service snapshot omits $requiredSnapshotPath."
@@ -372,6 +424,21 @@ if (Test-Path -LiteralPath $profileLibrary -PathType Leaf) {
     }
     if (-not @($failures | Where-Object { $_ -match "service snapshot" }).Count) {
         Add-Success "Protected service snapshot dependencies"
+    }
+    if (
+        $serviceControl -match '(?m)^\.\s+.*zapretctl\.ps1' -or
+        $serviceControl.Contains('$script:AppRoot = $serviceRoot') -or
+        $serviceControl.Contains('Ensure-Initialized') -or
+        $serviceControl.Contains('Test-IsAdministrator') -or
+        -not $serviceControl.Contains('Invoke-TpmControllerCommand') -or
+        -not $serviceControl.Contains('"launch-spec"')
+    ) {
+        Add-Failure (
+            "Service control must consume the versioned launch-spec API " +
+            "without loading controller internals."
+        )
+    } else {
+        Add-Success "Narrow service-to-runtime launch API"
     }
 }
 
@@ -437,7 +504,7 @@ foreach ($relativePath in $domainLists) {
     $seen = New-Object "Collections.Generic.HashSet[string]" (
         [StringComparer]::OrdinalIgnoreCase
     )
-    foreach ($value in Get-MeaningfulLines (Get-ProjectPath $relativePath)) {
+    foreach ($value in Get-TpmMeaningfulLines (Get-ProjectPath $relativePath)) {
         $listEntryCount++
         $domain = $value.TrimStart("^").TrimEnd(".")
         $valid = $domain.Length -le 253 -and
@@ -470,7 +537,7 @@ foreach ($relativePath in $ipLists) {
     $seen = New-Object "Collections.Generic.HashSet[string]" (
         [StringComparer]::OrdinalIgnoreCase
     )
-    foreach ($value in Get-MeaningfulLines (Get-ProjectPath $relativePath)) {
+    foreach ($value in Get-TpmMeaningfulLines (Get-ProjectPath $relativePath)) {
         $listEntryCount++
         $parts = $value.Split("/")
         $address = $null
@@ -528,7 +595,7 @@ foreach ($relativePath in @("tests\targets.txt")) {
     $targetNames = New-Object "Collections.Generic.HashSet[string]" (
         [StringComparer]::OrdinalIgnoreCase
     )
-    foreach ($line in Get-MeaningfulLines (Get-ProjectPath $relativePath)) {
+    foreach ($line in Get-TpmMeaningfulLines (Get-ProjectPath $relativePath)) {
         if ($line -notmatch '^(?<name>[A-Za-z0-9_-]+)\s*=\s*"(?<url>https://[^"]+)"\s*$') {
             Add-Failure "Invalid endpoint definition in ${relativePath}: $line"
             continue

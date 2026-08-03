@@ -9,6 +9,14 @@ if not defined profile (
   exit /b 2
 )
 
+set "TRAFFIC_PROFILE_ID=%profile%"
+powershell.exe -NoLogo -NoProfile -Command "if ($env:TRAFFIC_PROFILE_ID -notmatch '^[A-Za-z0-9_-]{1,64}$') { exit 2 }"
+if errorlevel 1 (
+  echo ERROR: The profile name is invalid.
+  pause
+  exit /b 2
+)
+
 if defined TRAFFIC_PROFILE_TEST_MODE goto elevated
 fltmc >nul 2>&1
 if errorlevel 1 (
@@ -37,7 +45,7 @@ if not errorlevel 1 (
   exit /b 3
 )
 
-call "%cd%\zapretctl.cmd" stop >nul 2>&1
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\zapretctl.ps1" stop >nul 2>&1
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\manage-network-mappings.ps1" cleanup >nul 2>&1
 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\manage-network-mappings.ps1" install
@@ -56,7 +64,7 @@ echo.
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\zapretctl.ps1" foreground "%profile%"
 set "run_error=%errorlevel%"
 
-call "%cd%\zapretctl.cmd" stop >nul 2>&1
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\zapretctl.ps1" stop >nul 2>&1
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\manage-network-mappings.ps1" cleanup >nul 2>&1
 
 echo.

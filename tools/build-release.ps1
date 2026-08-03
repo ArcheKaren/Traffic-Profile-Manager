@@ -392,7 +392,13 @@ try {
     foreach ($relativePath in $rootFiles) {
         Copy-ProjectFile $relativePath
     }
-    foreach ($directory in @("assets", "config\profiles", "lists")) {
+    foreach ($directory in @(
+        "assets",
+        "config\profiles",
+        "config\schemas",
+        "lists",
+        "modules"
+    )) {
         Get-ChildItem -LiteralPath (Join-Path $projectRoot $directory) -File -Recurse |
             ForEach-Object {
                 $relativePath = $_.FullName.Substring($projectRoot.Length + 1)

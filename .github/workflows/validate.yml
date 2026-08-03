@@ -23,6 +23,68 @@ jobs:
       - name: Получение исходников
         uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3 # v6.2.0
 
+      - name: Установка модулей проверки
+        shell: powershell
+        run: |
+          $script = @'
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Scope CurrentUser -Force
+          '@
+          $encodedCommand = [Convert]::ToBase64String(
+            [Text.Encoding]::Unicode.GetBytes($script)
+          )
+          & "${{ matrix.shell }}.exe" `
+            -NoLogo `
+            -NoProfile `
+            -EncodedCommand $encodedCommand
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: PSScriptAnalyzer
+        shell: powershell
+        run: |
+          $script = @'
+          Import-Module PSScriptAnalyzer -RequiredVersion 1.24.0 -Force
+          $sourceFiles = @(
+            Get-ChildItem -LiteralPath . -File -Filter *.ps1
+            Get-ChildItem -LiteralPath tools, modules, tests -File -Recurse |
+              Where-Object Extension -in ".ps1", ".psm1", ".psd1"
+          )
+          $issues = @($sourceFiles | Invoke-ScriptAnalyzer -Severity Error)
+          $issues | Format-Table -AutoSize
+          if ($issues.Count) {
+            throw "PSScriptAnalyzer found $($issues.Count) error(s)."
+          }
+          '@
+          $encodedCommand = [Convert]::ToBase64String(
+            [Text.Encoding]::Unicode.GetBytes($script)
+          )
+          & "${{ matrix.shell }}.exe" `
+            -NoLogo `
+            -NoProfile `
+            -EncodedCommand $encodedCommand
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Pester
+        shell: powershell
+        run: |
+          $script = @'
+          Import-Module Pester -RequiredVersion 5.7.1 -Force
+          $configuration = New-PesterConfiguration
+          $configuration.Run.Path = ".\tests\unit"
+          $configuration.Run.Exit = $true
+          $configuration.Output.Verbosity = "Detailed"
+          Invoke-Pester -Configuration $configuration
+          '@
+          $encodedCommand = [Convert]::ToBase64String(
+            [Text.Encoding]::Unicode.GetBytes($script)
+          )
+          & "${{ matrix.shell }}.exe" `
+            -NoLogo `
+            -NoProfile `
+            -EncodedCommand $encodedCommand
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Аудит исходников
         shell: powershell
         run: |
@@ -59,3 +121,40 @@ jobs:
             Where-Object Name -ne ".git" |
             Copy-Item -Destination $target -Recurse -Force
           & (Join-Path $target "tools\test-project.ps1") -SkipRuntimeCheck
+
+  release-build:
+    name: Сборка релизного ZIP
+    runs-on: windows-latest
+    timeout-minutes: 20
+    needs: project-checks
+
+    steps:
+      - name: Получение исходников
+        uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3 # v6.2.0
+
+      - name: Восстановление проверенного runtime
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $manifest = Get-Content -Raw runtime\SOURCE.json | ConvertFrom-Json
+          $directory = Join-Path $env:RUNNER_TEMP "tpm-runtime-bootstrap"
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          gh release download $manifest.bootstrapRelease.tag `
+            --pattern $manifest.bootstrapRelease.asset `
+            --dir $directory
+          .\tools\restore-runtime.ps1 `
+            -ArchivePath (Join-Path $directory $manifest.bootstrapRelease.asset)
+
+      - name: Сборка и проверка архива
+        shell: powershell
+        run: .\tools\build-release.ps1 -NoDirectorySync
+
+      - name: Проверка SHA-256
+        shell: powershell
+        run: |
+          $archive = "release\TrafficProfileManager.zip"
+          if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
+            throw "Release archive was not created."
+          }
+          Get-FileHash -LiteralPath $archive -Algorithm SHA256 | Format-List

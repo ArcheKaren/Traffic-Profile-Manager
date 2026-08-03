@@ -12,6 +12,19 @@ $projectRoot = if ($RootPath) {
 } else {
     Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 }
+Import-Module (
+    Join-Path $projectRoot `
+        "modules\TrafficProfileManager.Operations\TrafficProfileManager.Operations.psd1"
+) -ErrorAction Stop
+
+Write-TpmOperationLog `
+    -AppRoot $projectRoot `
+    -Component "runtime-restore" `
+    -Operation "restore" `
+    -Status "started" `
+    -Data @{ archive = [IO.Path]::GetFullPath($ArchivePath) }
+
+try {
 $archive = [IO.Path]::GetFullPath($ArchivePath)
 $manifestPath = Join-Path $projectRoot "runtime\SOURCE.json"
 $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
@@ -106,4 +119,25 @@ try {
     $zip.Dispose()
 }
 
+Write-TpmOperationLog `
+    -AppRoot $projectRoot `
+    -Component "runtime-restore" `
+    -Operation "restore" `
+    -Status "succeeded" `
+    -Data @{ archive = $archive }
 Write-Host "Verified runtime restored from $archive" -ForegroundColor Green
+} catch {
+    $restoreError = $_
+    try {
+        Write-TpmOperationLog `
+            -AppRoot $projectRoot `
+            -Component "runtime-restore" `
+            -Operation "restore" `
+            -Status "failed" `
+            -Message $restoreError.Exception.Message `
+            -Data @{ archive = [IO.Path]::GetFullPath($ArchivePath) }
+    } catch {
+        Write-Warning "The runtime restore journal could not be updated: $($_.Exception.Message)"
+    }
+    throw $restoreError
+}

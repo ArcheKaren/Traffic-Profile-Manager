@@ -31,11 +31,41 @@ $serviceRoot = Join-Path $serviceContainer "Service"
 $serviceMarker = Join-Path $serviceRoot ".tpm-managed-service"
 $serviceMappingTool = Join-Path $serviceRoot "manage-network-mappings.ps1"
 $mappingWatcher = Join-Path $serviceRoot "tools\watch-service-mappings.ps1"
+Import-Module (
+    Join-Path $appRoot `
+        "modules\TrafficProfileManager.Core\TrafficProfileManager.Core.psd1"
+) -ErrorAction Stop
+Import-Module (
+    Join-Path $appRoot `
+        "modules\TrafficProfileManager.Operations\TrafficProfileManager.Operations.psd1"
+) -ErrorAction Stop
+Import-Module (
+    Join-Path $appRoot `
+        "modules\TrafficProfileManager.Controller\TrafficProfileManager.Controller.psd1"
+) -ErrorAction Stop
+. (Join-Path $appRoot "tools\game-filter-library.ps1")
 
-. (Join-Path $appRoot "zapretctl.ps1") help | Out-Null
-
-if ($Action -ne "status" -and -not (Test-IsAdministrator)) {
+if ($Action -ne "status" -and -not (Test-TpmIsAdministrator)) {
     throw "Administrator rights are required."
+}
+
+function Write-ServiceOperation(
+    [ValidateSet("started", "succeeded", "failed")]
+    [string]$Status,
+    [string]$Message = ""
+) {
+    if ($Action -eq "status") { return }
+    try {
+        Write-TpmOperationLog `
+            -AppRoot $appRoot `
+            -Component "service-control" `
+            -Operation $Action `
+            -Status $Status `
+            -Message $Message `
+            -Data @{ profile = $Profile }
+    } catch {
+        Write-Warning "The service operation journal could not be updated: $($_.Exception.Message)"
+    }
 }
 
 function Get-ManagedServiceExecutable {
@@ -129,7 +159,7 @@ function Assert-ServiceDeploymentPath {
 }
 
 function Set-ProtectedServiceAcl {
-    if (-not (Test-IsAdministrator)) {
+    if (-not (Test-TpmIsAdministrator)) {
         throw "Administrator rights are required to protect the service deployment."
     }
     Assert-ServiceDeploymentPath
@@ -315,10 +345,19 @@ function Sync-ServiceMutableData {
     } elseif (Test-Path -LiteralPath $protectedState) {
         Remove-Item -LiteralPath $protectedState -Force
     }
+    $universalState = Join-Path $appRoot "state\universal-game-transport.json"
+    $protectedUniversalState = Join-Path `
+        $serviceRoot `
+        "state\universal-game-transport.json"
+    if (Test-Path -LiteralPath $universalState -PathType Leaf) {
+        Copy-ServiceFile $universalState "state\universal-game-transport.json"
+    } elseif (Test-Path -LiteralPath $protectedUniversalState) {
+        Remove-Item -LiteralPath $protectedUniversalState -Force
+    }
 }
 
 function New-ServiceDeployment([string]$Profile) {
-    if (-not (Test-IsAdministrator)) {
+    if (-not (Test-TpmIsAdministrator)) {
         throw "Administrator rights are required to create the service deployment."
     }
     Assert-ServiceDeploymentPath
@@ -346,14 +385,22 @@ function New-ServiceDeployment([string]$Profile) {
             Join-Path $appRoot "runtime\SOURCE.json"
         ) "runtime\SOURCE.json"
         foreach ($relativePath in @(
+            "zapretctl.ps1",
             "manage-network-mappings.ps1",
+            "tools\catalog-library.ps1",
             "tools\game-filter-library.ps1",
+            "tools\profile-library.ps1",
             "tools\network-mapping-library.ps1",
             "tools\watch-service-mappings.ps1"
         )) {
             Copy-ServiceFile (Join-Path $appRoot $relativePath) $relativePath
         }
-        foreach ($directory in @("assets", "config\profiles")) {
+        foreach ($directory in @(
+            "assets",
+            "config\profiles",
+            "config\schemas",
+            "modules"
+        )) {
             Copy-ServiceTree $directory
         }
         Copy-ServiceFile (
@@ -454,13 +501,21 @@ function Install-ManagedRefreshTask {
     }
 
     Remove-ManagedRefreshTask
-    $arguments = (
-        '-NoLogo -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass ' +
-        '-File "{0}" -ServiceName "{1}"'
-    ) -f $mappingWatcher, $serviceName
+    $arguments = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-WindowStyle",
+        "Hidden",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        $mappingWatcher,
+        "-ServiceName",
+        $serviceName
+    ) | ForEach-Object { ConvertTo-TpmWindowsArgument $_ }
     $action = New-ScheduledTaskAction `
         -Execute "powershell.exe" `
-        -Argument $arguments
+        -Argument ($arguments -join " ")
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $principal = New-ScheduledTaskPrincipal `
         -UserId "SYSTEM" `
@@ -486,9 +541,13 @@ function Install-ManagedRefreshTask {
         -Force | Out-Null
 }
 
+Write-ServiceOperation "started"
+try {
 switch ($Action) {
     "install" {
-        Ensure-Initialized
+        Invoke-TpmControllerCommand `
+            -AppRoot $appRoot `
+            -Command "init"
         if (-not $Profile -or $Profile -notmatch "^[a-zA-Z0-9_-]+$") {
             throw "A valid profile name is required."
         }
@@ -505,22 +564,60 @@ switch ($Action) {
         Remove-ManagedService
         try {
             New-ServiceDeployment $Profile
-            $sourceScriptRoot = $script:AppRoot
-            $script:AppRoot = $serviceRoot
-            try {
-                $executable = Find-RuntimeExecutable
-                $arguments = @(
-                    Build-WinwsArguments $false $Profile |
-                        Where-Object {
-                            $_ -ne "--daemon" -and
-                            -not $_.StartsWith("--pidfile=")
-                        }
-                )
-            } finally {
-                $script:AppRoot = $sourceScriptRoot
+            $controller = Join-Path $serviceRoot "zapretctl.ps1"
+            $startInfo = New-TpmProcessStartInfo `
+                -FilePath "powershell.exe" `
+                -ArgumentList @(
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    $controller,
+                    "launch-spec",
+                    $Profile
+                ) `
+                -CreateNoWindow `
+                -RedirectStandardOutput `
+                -RedirectStandardError
+            $specificationProcess = [Diagnostics.Process]::Start($startInfo)
+            $specificationJson = $specificationProcess.StandardOutput.ReadToEnd()
+            $specificationError = $specificationProcess.StandardError.ReadToEnd()
+            $specificationProcess.WaitForExit()
+            if ($specificationProcess.ExitCode -ne 0) {
+                $specificationDetail = (
+                    $specificationError + [Environment]::NewLine +
+                    $specificationJson
+                ).Trim()
+                throw "Launch specification failed: $specificationDetail"
             }
-            $binaryPath = (Quote-WindowsArgument $executable) + " " +
-                (($arguments | ForEach-Object { Quote-WindowsArgument $_ }) -join " ")
+            $specification = $specificationJson | ConvertFrom-Json
+            if (
+                [int]$specification.schemaVersion -ne 1 -or
+                -not [string]$specification.executable -or
+                $null -eq $specification.arguments
+            ) {
+                throw "The protected launch specification is invalid."
+            }
+            $executable = [string]$specification.executable
+            $resolvedExecutable = [IO.Path]::GetFullPath($executable)
+            $resolvedServiceRoot = [IO.Path]::GetFullPath($serviceRoot).TrimEnd("\")
+            if (
+                -not $resolvedExecutable.StartsWith(
+                    $resolvedServiceRoot + "\runtime\",
+                    [StringComparison]::OrdinalIgnoreCase
+                ) -or
+                [IO.Path]::GetFileName($resolvedExecutable) -cne "winws2.exe"
+            ) {
+                throw "The launch specification returned an unsafe executable path."
+            }
+            $executable = $resolvedExecutable
+            $arguments = @($specification.arguments | ForEach-Object { [string]$_ })
+            [void](Test-TpmArgumentVector $arguments)
+            $binaryPath = (ConvertTo-TpmWindowsArgument $executable) + " " +
+                (($arguments | ForEach-Object {
+                    ConvertTo-TpmWindowsArgument $_
+                }) -join " ")
 
             Invoke-ServiceMapping install | Out-Null
             New-Service -Name $serviceName `
@@ -617,6 +714,17 @@ switch ($Action) {
                     "none"
                 })
             )
+            $universal = Get-UniversalGameTransport $appRoot
+            Write-Host (
+                "Universal game transport: {0}" -f
+                $(if ($universal.Mode -eq "all") {
+                    "TCP+UDP ($($universal.Preset))"
+                } elseif ($universal.Mode -eq "off") {
+                    "off"
+                } else {
+                    "$($universal.Mode.ToUpperInvariant()) ($($universal.Preset))"
+                })
+            )
         } catch {
             Write-Host "Game filters: invalid ($($_.Exception.Message))" `
                 -ForegroundColor Red
@@ -698,4 +806,10 @@ switch ($Action) {
         Invoke-ServiceMapping cleanup
         Write-Host "Temporary mappings cleaned." -ForegroundColor Green
     }
+}
+    Write-ServiceOperation "succeeded"
+} catch {
+    $serviceError = $_
+    Write-ServiceOperation "failed" $serviceError.Exception.Message
+    throw $serviceError
 }

@@ -15,7 +15,10 @@ $appRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $profileRoot = Join-Path $appRoot "config\profiles"
 $utf8NoBom = New-Object Text.UTF8Encoding($false)
 
-. (Join-Path $appRoot "tools\profile-library.ps1")
+Import-Module (
+    Join-Path $appRoot `
+        "modules\TrafficProfileManager.Profile\TrafficProfileManager.Profile.psd1"
+) -ErrorAction Stop
 
 function Show-InvalidProfiles {
     param([object[]]$Profiles)

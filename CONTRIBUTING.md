@@ -12,7 +12,13 @@
 
 ```powershell
 .\tools\test-project.ps1 -SkipRuntimeCheck
+Invoke-Pester .\tests\unit
+.\tests\smoke.ps1
 ```
+
+CI использует Pester 5.7.1 и PSScriptAnalyzer 1.24.0 в Windows PowerShell 5.1
+и PowerShell 7. Перед отправкой изменения не должно быть ошибок анализатора,
+Pester или smoke-проверки.
 
 ## Требования к изменениям
 
