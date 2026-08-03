@@ -533,7 +533,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 `VERSION`, восстанавливает runtime из зафиксированного проверенного архива,
 выполняет полную сборку и публикует `TrafficProfileManager.zip` вместе с
 `SHA256SUMS.txt`. Описание читается из секции текущей версии `CHANGELOG.md` как
-UTF-8-файл.
+UTF-8-файл. Релизный коммит именуется строго `Release <VERSION>`, например
+`Release 1.1.0`. ZIP публикуется без пользовательской метки, поэтому его
+отображаемое имя всегда совпадает с именем файла `TrafficProfileManager.zip`.
 
 <a id="repository-structure"></a>
 
