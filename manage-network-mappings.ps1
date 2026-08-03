@@ -181,12 +181,21 @@ function Invoke-WithHostsLock([scriptblock]$Operation) {
         [void]$mutexSecurity.AddAccessRule($rule)
     }
     $createdNew = $false
-    $mutex = New-Object Threading.Mutex(
-        $false,
-        $hostsMutexName,
-        [ref]$createdNew,
-        $mutexSecurity
-    )
+    if ($null -ne ("System.Threading.MutexAcl" -as [type])) {
+        $mutex = [System.Threading.MutexAcl]::Create(
+            $false,
+            $hostsMutexName,
+            [ref]$createdNew,
+            $mutexSecurity
+        )
+    } else {
+        $mutex = New-Object Threading.Mutex(
+            $false,
+            $hostsMutexName,
+            [ref]$createdNew,
+            $mutexSecurity
+        )
+    }
     $acquired = $false
     try {
         try {
