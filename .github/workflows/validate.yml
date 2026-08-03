@@ -24,12 +24,31 @@ jobs:
         uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3 # v6.2.0
 
       - name: Аудит исходников
-        shell: ${{ matrix.shell }}
-        run: .\tools\test-project.ps1 -SkipRuntimeCheck
+        shell: powershell
+        run: |
+          $shellExecutable = (Get-Command `
+            "${{ matrix.shell }}.exe" `
+            -ErrorAction Stop).Source
+          & $shellExecutable `
+            -NoLogo `
+            -NoProfile `
+            -ExecutionPolicy Bypass `
+            -File .\tools\test-project.ps1 `
+            -SkipRuntimeCheck
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Изолированный smoke-тест
-        shell: ${{ matrix.shell }}
-        run: .\tests\smoke.ps1
+        shell: powershell
+        run: |
+          $shellExecutable = (Get-Command `
+            "${{ matrix.shell }}.exe" `
+            -ErrorAction Stop).Source
+          & $shellExecutable `
+            -NoLogo `
+            -NoProfile `
+            -ExecutionPolicy Bypass `
+            -File .\tests\smoke.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Проверка пути с Unicode и пробелами
         shell: powershell
