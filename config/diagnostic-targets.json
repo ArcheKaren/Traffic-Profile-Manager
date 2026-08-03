@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "id": "overview",
+      "displayName": "General overview",
+      "domains": ["github.com", "discord.com", "instagram.com"]
+    },
+    {
+      "id": "meta-quest",
+      "displayName": "Meta Quest and Horizon",
+      "domains": [
+        "meta.com",
+        "oculus.com",
+        "graph.oculus.com",
+        "securecdn.oculus.com",
+        "scontent.oculuscdn.com"
+      ]
+    },
+    {
+      "id": "instagram",
+      "displayName": "Instagram media",
+      "domains": [
+        "instagram.com",
+        "i.instagram.com",
+        "cdninstagram.com",
+        "scontent.cdninstagram.com"
+      ]
+    },
+    {
+      "id": "github",
+      "displayName": "GitHub downloads",
+      "domains": [
+        "github.com",
+        "api.github.com",
+        "raw.githubusercontent.com",
+        "objects.githubusercontent.com"
+      ]
+    },
+    {
+      "id": "discord",
+      "displayName": "Discord",
+      "domains": ["discord.com", "discord.gg", "cdn.discordapp.com"]
+    }
+  ]
+}

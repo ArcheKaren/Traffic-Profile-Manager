@@ -10,13 +10,16 @@ param(
     [string]$Arg2,
 
     [Parameter(Position = 3)]
-    [string]$Arg3
+    [string]$Arg3,
+
+    [switch]$NoNetwork
 )
 
 $ErrorActionPreference = "Stop"
 $CommandArgs = @(
     @($Arg1, $Arg2, $Arg3) | Where-Object { -not [string]::IsNullOrEmpty($_) }
 )
+if ($NoNetwork) { $CommandArgs += "--no-network" }
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $script:AppRoot = if ($env:ZAPRETCTL_HOME) {
     [IO.Path]::GetFullPath($env:ZAPRETCTL_HOME)
@@ -44,6 +47,7 @@ $script:UserListTemplates = [ordered]@{
 }
 
 . (Join-Path $PSScriptRoot "tools\game-filter-library.ps1")
+. (Join-Path $PSScriptRoot "tools\catalog-library.ps1")
 . (Join-Path $PSScriptRoot "tools\profile-library.ps1")
 
 function Get-AppPath([string]$RelativePath) {
@@ -157,6 +161,7 @@ function Initialize-App {
         "config\profiles",
         "config\game-filters",
         "lists",
+        "lists\packs",
         "logs",
         "runtime",
         "state"
@@ -190,6 +195,9 @@ function Initialize-App {
         }
     }
     Initialize-UserLists
+    if (Test-Path -LiteralPath (Get-AppPath "lists\catalog.json") -PathType Leaf) {
+        [void](Sync-DomainCatalog $script:AppRoot)
+    }
 
     Write-Host "Ready: $script:AppRoot"
     Write-Host "Add a target: zapretctl domain add example.org"
@@ -201,6 +209,9 @@ function Ensure-Initialized {
         throw "The project is not initialized. Run 'zapretctl init'."
     }
     Initialize-UserLists
+    if (Test-Path -LiteralPath (Get-AppPath "lists\catalog.json") -PathType Leaf) {
+        [void](Sync-DomainCatalog $script:AppRoot)
+    }
 }
 
 function Get-MeaningfulLines([string]$Path) {
@@ -656,6 +667,7 @@ function Build-WinwsArguments([bool]$DryRun, [string]$ProfileName = "") {
         $profile `
         $profilePath `
         $script:AppRoot)
+    $profile = Resolve-TrafficProfileDefinition $profile $script:AppRoot
     $gameTransports = @(
         Get-EnabledGameFilterTransports $script:AppRoot
     )
@@ -1081,6 +1093,40 @@ function Show-Status {
     $userIps = @(Get-MeaningfulLines (Get-AppPath "lists\user-ips.txt")).Count
     Write-Host "Domains: $($baseDomains + $userDomains) (built-in: $baseDomains, custom: $userDomains)"
     Write-Host "IP/CIDR: $($baseIps + $userIps) (built-in: $baseIps, custom: $userIps)"
+    $catalog = Get-TargetCatalog $script:AppRoot
+    if ($null -ne $catalog) {
+        $packState = Get-DomainPackState $script:AppRoot $catalog
+        $enabledPacks = @(
+            $catalog.packs | Where-Object { $packState.Enabled.Contains([string]$_.id) }
+        )
+        Write-Host "Domain catalog: $($catalog.revision) ($($enabledPacks.Count)/$(@($catalog.packs).Count) packs enabled)"
+    }
+}
+
+function Invoke-DomainPackCommand([string[]]$InputArgs) {
+    $action = if ($InputArgs.Count -ge 1) { $InputArgs[0].ToLowerInvariant() } else { "list" }
+    if ($action -notin @("list", "enable", "disable", "rebuild")) {
+        throw "Usage: zapretctl pack list|enable|disable|rebuild [pack-id]"
+    }
+    $id = if ($InputArgs.Count -ge 2) { $InputArgs[1] } else { "" }
+    & (Get-AppPath "tools\domain-pack-manager.ps1") $action $id -RootPath $script:AppRoot
+    if (-not $?) { throw "Domain pack command failed." }
+}
+
+function Invoke-ApplicationDiagnostics([string[]]$InputArgs) {
+    Ensure-Initialized
+    $parameters = @{ RootPath = $script:AppRoot }
+    foreach ($argument in $InputArgs) {
+        if ($argument -eq "--no-network") {
+            $parameters.NoNetwork = $true
+        } elseif (-not $parameters.ContainsKey("TargetId")) {
+            $parameters.TargetId = $argument
+        } else {
+            throw "Usage: zapretctl diagnose [target-id] [--no-network]"
+        }
+    }
+    & (Get-AppPath "tools\application-diagnostics.ps1") @parameters
+    if (-not $?) { throw "Application diagnostics failed." }
 }
 
 function Adopt-ZapretProcess {
@@ -1185,6 +1231,8 @@ zapretctl - local traffic profile manager
   ip list [--exclude]                   show the list
   ip import <file> [--exclude]          import a list
   profile list|show|use <name>          manage profiles
+  pack list|enable|disable|rebuild      manage built-in domain packs
+  diagnose [target-id] [-NoNetwork]     create local TXT and JSON reports
   runtime path <winws2.exe>             set an explicit runtime path
   start                                 start winws2
   foreground <profile>                  run in the current window
@@ -1209,6 +1257,8 @@ try {
         "domain" { Invoke-ListCommand "domain" $CommandArgs }
         "ip" { Invoke-ListCommand "ip" $CommandArgs }
         "profile" { Invoke-ProfileCommand $CommandArgs }
+        "pack" { Invoke-DomainPackCommand $CommandArgs }
+        "diagnose" { Invoke-ApplicationDiagnostics $CommandArgs }
         "runtime" { Invoke-RuntimeCommand $CommandArgs }
         "start" { Start-Zapret $false }
         "foreground" {

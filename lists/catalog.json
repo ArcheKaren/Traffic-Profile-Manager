@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "revision": "2026.08.03.1",
+  "generatedFile": "lists\\domains.txt",
+  "sources": [
+    {
+      "id": "project-curated",
+      "description": "Curated and validated project catalog."
+    },
+    {
+      "id": "domain-list-community",
+      "url": "https://github.com/v2fly/domain-list-community",
+      "description": "Secondary ownership and coverage reference."
+    }
+  ],
+  "packs": [
+    {
+      "id": "video-platforms",
+      "displayName": "Video platforms",
+      "description": "Video playback, assets and application endpoints.",
+      "path": "lists\\packs\\video-platforms.txt",
+      "enabledByDefault": true,
+      "sourceIds": ["project-curated"]
+    },
+    {
+      "id": "cloud-delivery",
+      "displayName": "Cloud delivery",
+      "description": "Cloud delivery and encrypted client hello services.",
+      "path": "lists\\packs\\cloud-delivery.txt",
+      "enabledByDefault": true,
+      "sourceIds": ["project-curated"]
+    },
+    {
+      "id": "streaming-media",
+      "displayName": "Streaming and media",
+      "description": "Streaming extensions, audio and media delivery.",
+      "path": "lists\\packs\\streaming-media.txt",
+      "enabledByDefault": true,
+      "sourceIds": ["project-curated"]
+    },
+    {
+      "id": "discord",
+      "displayName": "Discord",
+      "description": "Discord application, media and delivery endpoints.",
+      "path": "lists\\packs\\discord.txt",
+      "enabledByDefault": true,
+      "sourceIds": ["project-curated"]
+    },
+    {
+      "id": "meta-quest",
+      "displayName": "Meta platforms and Quest",
+      "description": "Meta, Oculus, Quest, Instagram, Threads and WhatsApp services.",
+      "path": "lists\\packs\\meta-quest.txt",
+      "enabledByDefault": true,
+      "sourceIds": ["project-curated", "domain-list-community"]
+    },
+    {
+      "id": "vr-companions",
+      "displayName": "VR companion software",
+      "description": "Common companion software for standalone VR headsets.",
+      "path": "lists\\packs\\vr-companions.txt",
+      "enabledByDefault": true,
+      "sourceIds": ["project-curated"]
+    },
+    {
+      "id": "social-communication",
+      "displayName": "Social and communication",
+      "description": "Messaging, social, community and archive platforms.",
+      "path": "lists\\packs\\social-communication.txt",
+      "enabledByDefault": true,
+      "sourceIds": ["project-curated"]
+    },
+    {
+      "id": "publishing",
+      "displayName": "Publishing and community",
+      "description": "Publishing, news and community platforms.",
+      "path": "lists\\packs\\publishing.txt",
+      "enabledByDefault": true,
+      "sourceIds": ["project-curated"]
+    },
+    {
+      "id": "source-hosting",
+      "displayName": "Source hosting",
+      "description": "Source code, release asset and container delivery.",
+      "path": "lists\\packs\\source-hosting.txt",
+      "enabledByDefault": true,
+      "sourceIds": ["project-curated"]
+    },
+    {
+      "id": "general-web",
+      "displayName": "General web services",
+      "description": "General web applications and content services.",
+      "path": "lists\\packs\\general-web.txt",
+      "enabledByDefault": true,
+      "sourceIds": ["project-curated"]
+    }
+  ]
+}

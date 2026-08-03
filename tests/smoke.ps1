@@ -81,6 +81,37 @@ try {
         throw "Existing user list was overwritten during initialization."
     }
 
+    Copy-Item `
+        -LiteralPath (Join-Path $projectRoot "lists\catalog.json") `
+        -Destination (Join-Path $resolvedTest "lists\catalog.json")
+    $temporaryPackRoot = Join-Path $resolvedTest "lists\packs"
+    New-Item -ItemType Directory -Path $temporaryPackRoot -Force | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $projectRoot "lists\packs") -File |
+        Copy-Item -Destination $temporaryPackRoot -Force
+    New-Item -ItemType Directory -Path (Join-Path $resolvedTest "tools") -Force |
+        Out-Null
+    foreach ($toolName in @(
+        "application-diagnostics.ps1"
+        "catalog-library.ps1"
+        "domain-pack-manager.ps1"
+    )) {
+        Copy-Item `
+            -LiteralPath (Join-Path $projectRoot "tools\$toolName") `
+            -Destination (Join-Path $resolvedTest "tools\$toolName")
+    }
+    Invoke-Cli @("pack", "list") | Out-Null
+    Invoke-Cli @("pack", "disable", "general-web") | Out-Null
+    if ([IO.File]::ReadAllText($preservedUserList) -ne $preservedContent) {
+        throw "Domain pack update changed an existing user list."
+    }
+    $compiledDomains = [IO.File]::ReadAllText(
+        (Join-Path $resolvedTest "lists\domains.txt")
+    )
+    if ($compiledDomains -notmatch "Catalog revision: 2026\.08\.03\.1") {
+        throw "Domain pack update did not rebuild domains.txt."
+    }
+    Invoke-Cli @("pack", "enable", "general-web") | Out-Null
+
     $idn = -join ([char[]](0x043F, 0x0440, 0x0438, 0x043C, 0x0435, 0x0440, 0x002E, 0x0440, 0x0444))
     Invoke-Cli @("domain", "add", $idn) | Out-Null
     Invoke-Cli @("domain", "add", $idn) | Out-Null
@@ -104,6 +135,9 @@ try {
     Copy-Item `
         -LiteralPath (Join-Path $projectRoot "config\profiles\strategy-wa-pc-pos1.json") `
         -Destination (Join-Path $resolvedTest "config\profiles\strategy-wa-pc-pos1.json")
+    Copy-Item `
+        -LiteralPath (Join-Path $projectRoot "config\rule-groups.json") `
+        -Destination (Join-Path $resolvedTest "config\rule-groups.json")
     foreach ($asset in @(
         "ACTIVE_DISCORD_UDP.bin"
         "ACTIVE_GAME_UDP.bin"
@@ -157,6 +191,12 @@ try {
 
     $mappingTool = Join-Path $projectRoot "manage-network-mappings.ps1"
     $testHosts = Join-Path $resolvedTest "hosts"
+    $temporaryMappingRoot = Join-Path $resolvedTest "config\network-mappings"
+    New-Item -ItemType Directory -Path $temporaryMappingRoot -Force | Out-Null
+    Get-ChildItem `
+        -LiteralPath (Join-Path $projectRoot "config\network-mappings") `
+        -File |
+        Copy-Item -Destination $temporaryMappingRoot -Force
     $gameFilterPath = Join-Path $resolvedTest "config\game-filters\test-game"
     New-Item -ItemType Directory -Path $gameFilterPath -Force | Out-Null
     [IO.File]::WriteAllText(
@@ -312,6 +352,9 @@ try {
     )) {
         throw "Enabled game filter mapping was not added."
     }
+    if (-not $hostsContent.Contains("57.144.245.32`tweb.whatsapp.com")) {
+        throw "Declarative fixed network mapping was not added."
+    }
     & powershell.exe `
         -NoLogo `
         -NoProfile `
@@ -454,6 +497,32 @@ try {
     }
     if ([IO.File]::ReadAllText($testHosts) -ne $incompleteHosts) {
         throw "Incomplete mapping guard changed the hosts file."
+    }
+
+    Copy-Item `
+        -LiteralPath (Join-Path $projectRoot "config\diagnostic-targets.json") `
+        -Destination (Join-Path $resolvedTest "config\diagnostic-targets.json")
+    Copy-Item `
+        -LiteralPath (Join-Path $projectRoot "VERSION") `
+        -Destination (Join-Path $resolvedTest "VERSION")
+    $diagnosticOutput = Join-Path $resolvedTest "test-results"
+    Invoke-Cli @("diagnose", "meta-quest", "-NoNetwork") | Out-Null
+    $diagnosticJson = @(
+        Get-ChildItem -LiteralPath $diagnosticOutput -Filter "*.json" -File
+    )
+    $diagnosticText = @(
+        Get-ChildItem -LiteralPath $diagnosticOutput -Filter "*.txt" -File
+    )
+    if ($diagnosticJson.Count -ne 1 -or $diagnosticText.Count -ne 1) {
+        throw "Application diagnostics did not create both local reports."
+    }
+    $diagnostic = Get-Content -Raw -LiteralPath $diagnosticJson[0].FullName |
+        ConvertFrom-Json
+    if (
+        [string]$diagnostic.target.id -ne "meta-quest" -or
+        -not [bool]$diagnostic.target.networkChecksSkipped
+    ) {
+        throw "Application diagnostics report contains invalid target metadata."
     }
 
     Write-Host "Smoke test passed." -ForegroundColor Green

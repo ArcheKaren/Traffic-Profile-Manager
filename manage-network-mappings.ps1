@@ -23,38 +23,10 @@ $hostsPath = if ($HostsPath) {
 }
 $beginMarker = "# TrafficProfileManager Mapping BEGIN"
 $endMarker = "# TrafficProfileManager Mapping END"
-$whatsAppAddress = "57.144.245.32"
-$webAddressCache = Join-Path $appRoot "state\instagram-web-ip.txt"
-$threadsWebAddressCache = Join-Path $appRoot "state\threads-web-ip.txt"
 $hostsMutexName = "Global\TrafficProfileManagerHostsLock"
 
 . (Join-Path $PSScriptRoot "tools\game-filter-library.ps1")
-
-$metaFallback = @{
-    "instagram.com" = "157.240.0.174"
-    "www.instagram.com" = "157.240.0.174"
-    "i.instagram.com" = "157.240.253.63"
-    "graph.instagram.com" = "57.144.244.192"
-    "help.instagram.com" = "157.240.0.174"
-    "privacycenter.instagram.com" = "157.240.0.174"
-    "cdninstagram.com" = "157.240.253.63"
-    "static.cdninstagram.com" = "157.240.253.63"
-    "scontent.cdninstagram.com" = "157.240.253.63"
-    "threads.com" = "57.144.248.192"
-    "www.threads.com" = "157.240.17.63"
-}
-$secureDnsProviders = @(
-    @{
-        Host = "cloudflare-dns.com"
-        Address = "1.1.1.1"
-        Url = "https://cloudflare-dns.com/dns-query?name={0}&type=A"
-    }
-    @{
-        Host = "dns.google"
-        Address = "8.8.8.8"
-        Url = "https://dns.google/resolve?name={0}&type=A"
-    }
-)
+. (Join-Path $PSScriptRoot "tools\network-mapping-library.ps1")
 
 function Get-ByteHash([byte[]]$Bytes) {
     $sha = [Security.Cryptography.SHA256]::Create()
@@ -296,74 +268,6 @@ function Remove-ManagedBlock {
     Update-ManagedBlock $null
 }
 
-function Get-WhatsAppHostNames {
-    $names = New-Object "Collections.Generic.HashSet[string]" (
-        [StringComparer]::OrdinalIgnoreCase
-    )
-
-    @(
-        "web.whatsapp.com"
-        "www.whatsapp.com"
-        "static.whatsapp.net"
-        "pps.whatsapp.net"
-        "dit.whatsapp.net"
-        "mmg.whatsapp.net"
-        "graph.whatsapp.com"
-        "g.whatsapp.net"
-        "media-hel3-1.cdn.whatsapp.net"
-        "media-arn2-1.cdn.whatsapp.net"
-    ) | ForEach-Object { [void]$names.Add($_) }
-
-    Get-DnsClientCache -ErrorAction SilentlyContinue |
-        ForEach-Object {
-            $name = ([string]$_.Entry).Trim().TrimEnd(".").ToLowerInvariant()
-            if ($name -match "^[a-z0-9.-]+\.(whatsapp\.com|whatsapp\.net)$") {
-                [void]$names.Add($name)
-            }
-        }
-
-    return @($names | Sort-Object)
-}
-
-function Get-InstagramHostNames {
-    $names = New-Object "Collections.Generic.HashSet[string]" (
-        [StringComparer]::OrdinalIgnoreCase
-    )
-
-    @(
-        "instagram.com"
-        "www.instagram.com"
-        "i.instagram.com"
-        "graph.instagram.com"
-        "help.instagram.com"
-        "privacycenter.instagram.com"
-        "api.instagram.com"
-        "edge-chat.instagram.com"
-        "gateway.instagram.com"
-        "upload.instagram.com"
-        "lookaside.instagram.com"
-        "cdninstagram.com"
-        "static.cdninstagram.com"
-        "scontent.cdninstagram.com"
-        "threads.com"
-        "www.threads.com"
-        "threads.net"
-        "www.threads.net"
-    ) | ForEach-Object { [void]$names.Add($_) }
-
-    Get-DnsClientCache -ErrorAction SilentlyContinue |
-        ForEach-Object {
-            $name = ([string]$_.Entry).Trim().TrimEnd(".").ToLowerInvariant()
-            if (
-                $name -match "^(instagram\.com|cdninstagram\.com|threads\.com|threads\.net|[a-z0-9.-]+\.(instagram\.com|cdninstagram\.com|threads\.com|threads\.net))$"
-            ) {
-                [void]$names.Add($name)
-            }
-        }
-
-    return @($names | Sort-Object)
-}
-
 function Invoke-SecureDnsQuery($Provider, [string]$Name) {
     try {
         $url = $Provider.Url -f [Uri]::EscapeDataString($Name)
@@ -401,16 +305,16 @@ function Invoke-SecureDnsQuery($Provider, [string]$Name) {
     return $null
 }
 
-function Get-SecureDnsProvider {
-    foreach ($provider in $secureDnsProviders) {
-        if (Invoke-SecureDnsQuery $provider "www.instagram.com") {
+function Get-SecureDnsProvider($Definition) {
+    foreach ($provider in @($Definition.providers)) {
+        if (Invoke-SecureDnsQuery $provider ([string]$Definition.probeHost)) {
             return $provider
         }
     }
     return $null
 }
 
-function Test-MetaWebAddress(
+function Test-WebAddress(
     [string]$HostName,
     [string]$Address
 ) {
@@ -433,40 +337,38 @@ function Test-MetaWebAddress(
     }
 }
 
-function Select-InstagramWebAddress($Mappings) {
+function Select-ConfiguredWebAddress(
+    $Override,
+    $Mappings,
+    [string[]]$FallbackAddresses
+) {
+    $cachePath = Join-Path $appRoot ([string]$Override.cacheFile)
     $candidates = New-Object "Collections.Generic.List[string]"
     $seen = New-Object "Collections.Generic.HashSet[string]" (
         [StringComparer]::OrdinalIgnoreCase
     )
-
-    if (Test-Path -LiteralPath $webAddressCache -PathType Leaf) {
-        $cached = (Get-Content -Raw -LiteralPath $webAddressCache).Trim()
+    if (Test-Path -LiteralPath $cachePath -PathType Leaf) {
+        $cached = (Get-Content -Raw -LiteralPath $cachePath).Trim()
         if ($cached -and $seen.Add($cached)) { $candidates.Add($cached) }
     }
-
-    foreach ($name in @(
-        "www.instagram.com"
-        "i.instagram.com"
-        "graph.instagram.com"
-        "scontent.cdninstagram.com"
-        "static.cdninstagram.com"
-    )) {
-        if ($Mappings.ContainsKey($name)) {
-            $address = $Mappings[$name]
+    foreach ($name in @($Override.candidates)) {
+        if ($Mappings.ContainsKey([string]$name)) {
+            $address = $Mappings[[string]$name]
             if ($seen.Add($address)) { $candidates.Add($address) }
         }
     }
-
-    foreach ($address in @($metaFallback.Values | Sort-Object -Unique)) {
+    foreach ($address in @($FallbackAddresses | Sort-Object -Unique)) {
         if ($seen.Add($address)) { $candidates.Add($address) }
     }
-
-    foreach ($address in @($candidates | Select-Object -First 6)) {
-        if (Test-MetaWebAddress "www.instagram.com" $address) {
-            $stateRoot = Split-Path -Parent $webAddressCache
-            New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
+    $maximum = if ([int]$Override.maxCandidates -gt 0) {
+        [int]$Override.maxCandidates
+    } else { 6 }
+    foreach ($address in @($candidates | Select-Object -First $maximum)) {
+        if (Test-WebAddress ([string]$Override.testHost) $address) {
+            New-Item -ItemType Directory -Path (Split-Path -Parent $cachePath) -Force |
+                Out-Null
             [IO.File]::WriteAllText(
-                $webAddressCache,
+                $cachePath,
                 $address + [Environment]::NewLine,
                 [Text.UTF8Encoding]::new($false)
             )
@@ -476,86 +378,45 @@ function Select-InstagramWebAddress($Mappings) {
     return $null
 }
 
-function Select-ThreadsWebAddress($Mappings) {
-    $candidates = New-Object "Collections.Generic.List[string]"
-    $seen = New-Object "Collections.Generic.HashSet[string]" (
-        [StringComparer]::OrdinalIgnoreCase
-    )
-
-    if (Test-Path -LiteralPath $threadsWebAddressCache -PathType Leaf) {
-        $cached = (Get-Content -Raw -LiteralPath $threadsWebAddressCache).Trim()
-        if ($cached -and $seen.Add($cached)) { $candidates.Add($cached) }
-    }
-
-    foreach ($name in @(
-        "www.threads.com"
-        "threads.com"
-        "www.instagram.com"
-        "i.instagram.com"
-        "graph.instagram.com"
-    )) {
-        if ($Mappings.ContainsKey($name)) {
-            $address = $Mappings[$name]
-            if ($seen.Add($address)) { $candidates.Add($address) }
-        }
-    }
-
-    foreach ($address in @($metaFallback.Values | Sort-Object -Unique)) {
-        if ($seen.Add($address)) { $candidates.Add($address) }
-    }
-
-    foreach ($address in @($candidates | Select-Object -First 6)) {
-        if (Test-MetaWebAddress "www.threads.com" $address) {
-            $stateRoot = Split-Path -Parent $threadsWebAddressCache
-            New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
-            [IO.File]::WriteAllText(
-                $threadsWebAddressCache,
-                $address + [Environment]::NewLine,
-                [Text.UTF8Encoding]::new($false)
-            )
-            return $address
-        }
-    }
-    return $null
-}
-
-function Get-ManagedMappings([bool]$IncludeInstagram) {
+function Get-ManagedMappings([string]$MappingAction) {
     $mappings = New-Object "Collections.Generic.Dictionary[string,string]" (
         [StringComparer]::OrdinalIgnoreCase
     )
 
-    foreach ($name in Get-WhatsAppHostNames) {
-        $mappings[$name] = $whatsAppAddress
-    }
+    foreach ($definition in Get-NetworkMappingDefinitions $appRoot) {
+        if ([string]$MappingAction -notin @($definition.actions)) { continue }
+        $hostNames = @(Get-NetworkMappingHostNames $definition)
+        if ([string]$definition.mode -eq "fixed") {
+            foreach ($name in $hostNames) {
+                $mappings[$name] = [string]$definition.address
+            }
+            continue
+        }
 
-    if ($IncludeInstagram) {
-        $provider = Get-SecureDnsProvider
-        foreach ($name in Get-InstagramHostNames) {
+        $fallbacks = @{}
+        foreach ($property in @($definition.fallbacks.PSObject.Properties)) {
+            $fallbacks[[string]$property.Name] = [string]$property.Value
+        }
+        $provider = Get-SecureDnsProvider $definition
+        foreach ($name in $hostNames) {
             $address = if ($provider) {
                 Invoke-SecureDnsQuery $provider $name
-            } else {
-                $null
-            }
-            if (-not $address -and $metaFallback.ContainsKey($name)) {
-                $address = $metaFallback[$name]
+            } else { $null }
+            if (-not $address -and $fallbacks.ContainsKey($name)) {
+                $address = $fallbacks[$name]
             }
             if ($address) { $mappings[$name] = $address }
         }
-        $webAddress = Select-InstagramWebAddress $mappings
-        if ($webAddress) {
-            foreach ($name in @(
-                "instagram.com"
-                "www.instagram.com"
-                "help.instagram.com"
-                "privacycenter.instagram.com"
-            )) {
-                $mappings[$name] = $webAddress
+        foreach ($override in @($definition.overrides)) {
+            $selected = Select-ConfiguredWebAddress `
+                $override `
+                $mappings `
+                @($fallbacks.Values)
+            if ($selected) {
+                foreach ($name in @($override.targets)) {
+                    $mappings[[string]$name] = $selected
+                }
             }
-        }
-        $threadsAddress = Select-ThreadsWebAddress $mappings
-        if ($threadsAddress) {
-            $mappings["threads.com"] = $threadsAddress
-            $mappings["www.threads.com"] = $threadsAddress
         }
     }
 
@@ -575,8 +436,8 @@ function Get-ManagedMappings([bool]$IncludeInstagram) {
     return $mappings
 }
 
-function Install-ManagedBlock([bool]$IncludeInstagram) {
-    $mappings = Get-ManagedMappings $IncludeInstagram
+function Install-ManagedBlock([string]$MappingAction) {
+    $mappings = Get-ManagedMappings $MappingAction
     Update-ManagedBlock $mappings
     Clear-DnsClientCache -ErrorAction SilentlyContinue
     return $mappings.Count
@@ -584,11 +445,11 @@ function Install-ManagedBlock([bool]$IncludeInstagram) {
 
 switch ($Action) {
     "install" {
-        $count = Install-ManagedBlock $false
+        $count = Install-ManagedBlock "install"
         Write-Output "Temporary network mappings installed: $count."
     }
     "refresh" {
-        $count = Install-ManagedBlock $true
+        $count = Install-ManagedBlock "refresh"
         Write-Output "Temporary secure mappings installed: $count."
     }
     "cleanup" {
@@ -610,7 +471,7 @@ switch ($Action) {
 
         $started = [DateTime]::UtcNow
         while ($zapret) {
-            try { [void](Install-ManagedBlock $true) } catch {}
+            try { [void](Install-ManagedBlock "refresh") } catch {}
             $elapsed = ([DateTime]::UtcNow - $started).TotalSeconds
             Start-Sleep -Seconds $(if ($elapsed -lt 30) { 3 } else { 30 })
             $zapret = if ($WinwsPid -gt 0) {

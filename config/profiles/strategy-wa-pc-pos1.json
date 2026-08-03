@@ -25,11 +25,7 @@
     {
       "name": "discord-tls",
       "scope": "first",
-      "match": [
-        "--filter-tcp=443,2053,2083,2087,2096,8443",
-        "--filter-l7=tls",
-        "--hostlist-domains=discord.com,discord.gg,discord.app,discord.media,discordapp.com,discordapp.net,discordcdn.com"
-      ],
+      "matchGroup": "discord-tls",
       "actions": [
         "--out-range=-d10",
         "--payload=tls_client_hello",
@@ -40,11 +36,7 @@
     {
       "name": "whatsapp-pc-pos1",
       "scope": "first",
-      "match": [
-        "--filter-tcp=443",
-        "--filter-l7=tls",
-        "--hostlist-domains=whatsapp.com,whatsapp.net,wa.me,wl.co,whatsappbrand.com,fbcdn.net"
-      ],
+      "matchGroup": "whatsapp-tls",
       "actions": [
         "--out-range=-d10",
         "--payload=tls_client_hello",
@@ -53,18 +45,36 @@
     },
     {
       "name": "http",
-      "match": ["--filter-tcp=80", "--filter-l7=http"],
-      "actions": ["--payload=http_req", "--lua-desync=multisplit:pos=method+2"]
+      "match": [
+        "--filter-tcp=80",
+        "--filter-l7=http"
+      ],
+      "actions": [
+        "--payload=http_req",
+        "--lua-desync=multisplit:pos=method+2"
+      ]
     },
     {
       "name": "tls",
-      "match": ["--filter-tcp=443", "--filter-l7=tls"],
-      "actions": ["--payload=tls_client_hello", "--lua-desync=multidisorder:pos=1,midsld"]
+      "match": [
+        "--filter-tcp=443",
+        "--filter-l7=tls"
+      ],
+      "actions": [
+        "--payload=tls_client_hello",
+        "--lua-desync=multidisorder:pos=1,midsld"
+      ]
     },
     {
       "name": "quic",
-      "match": ["--filter-udp=443", "--filter-l7=quic"],
-      "actions": ["--payload=quic_initial", "--lua-desync=drop"]
+      "match": [
+        "--filter-udp=443",
+        "--filter-l7=quic"
+      ],
+      "actions": [
+        "--payload=quic_initial",
+        "--lua-desync=drop"
+      ]
     },
     {
       "name": "discord-media",

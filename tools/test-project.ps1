@@ -53,10 +53,17 @@ $requiredPaths = @(
     "manage-network-mappings.ps1"
     "runtime\SOURCE.json"
     "config\config.json"
+    "config\diagnostic-targets.json"
     "config\game-filters"
+    "config\network-mappings"
     "config\profiles"
+    "config\rule-groups.json"
+    "docs\DIAGNOSTICS.md"
+    "docs\DOMAIN_PACKS.md"
     "docs\GAME_FILTERS.md"
     "lists\domains.txt"
+    "lists\catalog.json"
+    "lists\packs"
     "lists\domains-exclude.txt"
     "tests\targets.txt"
     "tools\profile-library.ps1"
@@ -64,8 +71,21 @@ $requiredPaths = @(
     "tools\profile-benchmark.ps1"
     "tools\game-filter-library.ps1"
     "tools\game-filter-manager.ps1"
+    "tools\catalog-library.ps1"
+    "tools\domain-pack-manager.ps1"
+    "tools\network-mapping-library.ps1"
+    "tools\application-diagnostics.ps1"
     "tools\service-control.ps1"
 )
+$sourceCheckout = Test-Path -LiteralPath (
+    Get-ProjectPath ".git"
+) -PathType Container
+if ($sourceCheckout) {
+    $requiredPaths += @(
+        ".github\workflows\release.yml"
+        ".github\workflows\validate.yml"
+    )
+}
 $missingPaths = @(
     $requiredPaths |
         Where-Object { -not (Test-Path -LiteralPath (Get-ProjectPath $_)) }
@@ -74,6 +94,28 @@ if ($missingPaths.Count) {
     foreach ($path in $missingPaths) { Add-Failure "Required path is missing: $path" }
 } else {
     Add-Success "Required project files"
+}
+
+$workflowPinFailures = 0
+if ($sourceCheckout) {
+    foreach ($relativePath in @(
+        ".github\workflows\release.yml"
+        ".github\workflows\validate.yml"
+    )) {
+        $content = Get-Content -Raw -LiteralPath (Get-ProjectPath $relativePath)
+        foreach ($match in [regex]::Matches(
+            $content,
+            "(?m)^\s*uses:\s*actions/checkout@(?<reference>\S+)"
+        )) {
+            if ($match.Groups["reference"].Value -notmatch "^[a-fA-F0-9]{40}$") {
+                Add-Failure "Unpinned actions/checkout reference in $relativePath."
+                $workflowPinFailures++
+            }
+        }
+    }
+    if ($workflowPinFailures -eq 0) {
+        Add-Success "Immutable GitHub Action references"
+    }
 }
 
 $excludedRoots = @(
@@ -161,6 +203,12 @@ if (Test-Path -LiteralPath $profileLibrary -PathType Leaf) {
         }
 
         $json = Get-Content -Raw -LiteralPath $profile.Path | ConvertFrom-Json
+        try {
+            $json = Resolve-TrafficProfileDefinition $json $projectRoot
+        } catch {
+            Add-Failure "Profile '$($profile.Id)' could not resolve shared rules: $($_.Exception.Message)"
+            continue
+        }
         $blobNames = New-Object "Collections.Generic.HashSet[string]" (
             [StringComparer]::OrdinalIgnoreCase
         )
@@ -309,6 +357,73 @@ if (Test-Path -LiteralPath $profileLibrary -PathType Leaf) {
     if (-not @($failures | Where-Object { $_ -match "hardcoded" }).Count) {
         Add-Success "Dynamic manager, benchmark, and validator catalogs"
     }
+
+    $serviceControl = Get-Content -Raw -LiteralPath (
+        Get-ProjectPath "tools\service-control.ps1"
+    )
+    foreach ($requiredSnapshotPath in @(
+        "config\rule-groups.json"
+        "config\network-mappings"
+        "tools\network-mapping-library.ps1"
+    )) {
+        if (-not $serviceControl.Contains($requiredSnapshotPath)) {
+            Add-Failure "Protected service snapshot omits $requiredSnapshotPath."
+        }
+    }
+    if (-not @($failures | Where-Object { $_ -match "service snapshot" }).Count) {
+        Add-Success "Protected service snapshot dependencies"
+    }
+}
+
+$catalogLibrary = Get-ProjectPath "tools\catalog-library.ps1"
+if (Test-Path -LiteralPath $catalogLibrary -PathType Leaf) {
+    . $catalogLibrary
+    try {
+        $catalogResult = Sync-DomainCatalog $projectRoot -CheckOnly
+        if (-not $catalogResult.Synchronized) {
+            Add-Failure "lists\domains.txt is not synchronized with the enabled domain packs."
+        } else {
+            Add-Success (
+                "Domain catalog $($catalogResult.Catalog.revision) " +
+                "($(@($catalogResult.Catalog.packs).Count) packs, " +
+                "$($catalogResult.DomainCount) domains)"
+            )
+        }
+    } catch {
+        Add-Failure "Domain catalog validation failed: $($_.Exception.Message)"
+    }
+}
+
+$mappingLibrary = Get-ProjectPath "tools\network-mapping-library.ps1"
+if (Test-Path -LiteralPath $mappingLibrary -PathType Leaf) {
+    . $mappingLibrary
+    try {
+        $mappingDefinitions = @(Get-NetworkMappingDefinitions $projectRoot)
+        if (-not $mappingDefinitions.Count) {
+            Add-Failure "No declarative network mappings were found."
+        } else {
+            Add-Success "Declarative network mappings ($($mappingDefinitions.Count) definitions)"
+        }
+    } catch {
+        Add-Failure "Network mapping definitions are invalid: $($_.Exception.Message)"
+    }
+}
+
+try {
+    $diagnosticCatalog = Get-Content -Raw -LiteralPath (
+        Get-ProjectPath "config\diagnostic-targets.json"
+    ) | ConvertFrom-Json
+    $diagnosticIds = @($diagnosticCatalog.targets | ForEach-Object { [string]$_.id })
+    if (
+        [int]$diagnosticCatalog.schemaVersion -ne 1 -or
+        -not $diagnosticIds.Count -or
+        @($diagnosticIds | Sort-Object -Unique).Count -ne $diagnosticIds.Count
+    ) {
+        throw "Invalid target catalog structure."
+    }
+    Add-Success "Application diagnostic targets ($($diagnosticIds.Count) targets)"
+} catch {
+    Add-Failure "Application diagnostic target catalog is invalid: $($_.Exception.Message)"
 }
 
 $domainLists = @(

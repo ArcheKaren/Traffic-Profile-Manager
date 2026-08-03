@@ -1,0 +1,83 @@
+name: Публикация релиза
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Получение исходников и тега
+        uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3 # v6.2.0
+        with:
+          fetch-depth: 0
+
+      - name: Проверка версии
+        shell: powershell
+        run: |
+          $version = (Get-Content -Raw VERSION).Trim()
+          if ("v$version" -cne "${{ github.ref_name }}") {
+            throw "Tag ${{ github.ref_name }} does not match VERSION $version."
+          }
+
+      - name: Восстановление проверенного runtime
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $manifest = Get-Content -Raw runtime\SOURCE.json | ConvertFrom-Json
+          $directory = Join-Path $env:RUNNER_TEMP "tpm-runtime-bootstrap"
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          gh release download $manifest.bootstrapRelease.tag `
+            --pattern $manifest.bootstrapRelease.asset `
+            --dir $directory
+          .\tools\restore-runtime.ps1 `
+            -ArchivePath (Join-Path $directory $manifest.bootstrapRelease.asset)
+
+      - name: Сборка и полная проверка ZIP
+        shell: powershell
+        run: .\tools\build-release.ps1 -NoDirectorySync
+
+      - name: Подготовка описания и контрольной суммы
+        shell: powershell
+        run: |
+          .\tools\get-release-notes.ps1 -OutputPath release\release-notes.md
+          $hash = (Get-FileHash release\TrafficProfileManager.zip -Algorithm SHA256).Hash
+          [IO.File]::WriteAllText(
+            (Join-Path $PWD "release\SHA256SUMS.txt"),
+            "$hash  TrafficProfileManager.zip`r`n",
+            [Text.UTF8Encoding]::new($false)
+          )
+
+      - name: Публикация GitHub Release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = (Get-Content -Raw VERSION).Trim()
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release edit $tag `
+              --title "Traffic Profile Manager $version" `
+              --notes-file release\release-notes.md `
+              --latest
+            gh release upload $tag `
+              release\TrafficProfileManager.zip `
+              release\SHA256SUMS.txt `
+              --clobber
+          } else {
+            gh release create $tag `
+              release\TrafficProfileManager.zip `
+              release\SHA256SUMS.txt `
+              --verify-tag `
+              --title "Traffic Profile Manager $version" `
+              --notes-file release\release-notes.md `
+              --latest
+          }

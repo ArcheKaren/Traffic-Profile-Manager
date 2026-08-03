@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "id": "instagram",
+  "mode": "secure-dns",
+  "actions": ["refresh"],
+  "probeHost": "www.instagram.com",
+  "hosts": [
+    "instagram.com",
+    "www.instagram.com",
+    "i.instagram.com",
+    "graph.instagram.com",
+    "help.instagram.com",
+    "privacycenter.instagram.com",
+    "api.instagram.com",
+    "edge-chat.instagram.com",
+    "gateway.instagram.com",
+    "upload.instagram.com",
+    "lookaside.instagram.com",
+    "cdninstagram.com",
+    "static.cdninstagram.com",
+    "scontent.cdninstagram.com",
+    "threads.com",
+    "www.threads.com",
+    "threads.net",
+    "www.threads.net"
+  ],
+  "discoverSuffixes": [
+    "instagram.com",
+    "cdninstagram.com",
+    "threads.com",
+    "threads.net"
+  ],
+  "providers": [
+    {
+      "host": "cloudflare-dns.com",
+      "address": "1.1.1.1",
+      "url": "https://cloudflare-dns.com/dns-query?name={0}&type=A"
+    },
+    {
+      "host": "dns.google",
+      "address": "8.8.8.8",
+      "url": "https://dns.google/resolve?name={0}&type=A"
+    }
+  ],
+  "fallbacks": {
+    "instagram.com": "157.240.0.174",
+    "www.instagram.com": "157.240.0.174",
+    "i.instagram.com": "157.240.253.63",
+    "graph.instagram.com": "57.144.244.192",
+    "help.instagram.com": "157.240.0.174",
+    "privacycenter.instagram.com": "157.240.0.174",
+    "cdninstagram.com": "157.240.253.63",
+    "static.cdninstagram.com": "157.240.253.63",
+    "scontent.cdninstagram.com": "157.240.253.63",
+    "threads.com": "57.144.248.192",
+    "www.threads.com": "157.240.17.63"
+  },
+  "overrides": [
+    {
+      "testHost": "www.instagram.com",
+      "cacheFile": "state\\instagram-web-ip.txt",
+      "maxCandidates": 6,
+      "targets": [
+        "instagram.com",
+        "www.instagram.com",
+        "help.instagram.com",
+        "privacycenter.instagram.com"
+      ],
+      "candidates": [
+        "www.instagram.com",
+        "i.instagram.com",
+        "graph.instagram.com",
+        "scontent.cdninstagram.com",
+        "static.cdninstagram.com"
+      ]
+    },
+    {
+      "testHost": "www.threads.com",
+      "cacheFile": "state\\threads-web-ip.txt",
+      "maxCandidates": 6,
+      "targets": ["threads.com", "www.threads.com"],
+      "candidates": [
+        "www.threads.com",
+        "threads.com",
+        "www.instagram.com",
+        "i.instagram.com",
+        "graph.instagram.com"
+      ]
+    }
+  ]
+}

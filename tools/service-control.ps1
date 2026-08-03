@@ -303,6 +303,7 @@ function Sync-ServiceMutableData {
     }
     foreach ($directory in @(
         "config\game-filters",
+        "config\network-mappings",
         "lists"
     )) {
         Copy-ServiceTree $directory
@@ -347,6 +348,7 @@ function New-ServiceDeployment([string]$Profile) {
         foreach ($relativePath in @(
             "manage-network-mappings.ps1",
             "tools\game-filter-library.ps1",
+            "tools\network-mapping-library.ps1",
             "tools\watch-service-mappings.ps1"
         )) {
             Copy-ServiceFile (Join-Path $appRoot $relativePath) $relativePath
@@ -354,6 +356,9 @@ function New-ServiceDeployment([string]$Profile) {
         foreach ($directory in @("assets", "config\profiles")) {
             Copy-ServiceTree $directory
         }
+        Copy-ServiceFile (
+            Join-Path $appRoot "config\rule-groups.json"
+        ) "config\rule-groups.json"
         foreach ($directory in @("logs", "state")) {
             New-Item -ItemType Directory -Path (Join-Path $serviceRoot $directory) -Force |
                 Out-Null

@@ -1,0 +1,6 @@
+# Source hosting and software delivery
+github.com
+githubusercontent.com
+githubassets.com
+ghcr.io
+github-cloud.s3.amazonaws.com

@@ -363,9 +363,13 @@ $rootFiles = @(
     "14 - Base (Mixed aggressive).bat"
 )
 $releaseToolFiles = @(
+    "application-diagnostics.ps1"
+    "catalog-library.ps1"
+    "domain-pack-manager.ps1"
     "profile-benchmark.ps1"
     "game-filter-library.ps1"
     "game-filter-manager.ps1"
+    "network-mapping-library.ps1"
     "profile-library.ps1"
     "profile-manager.ps1"
     "run-profile.bat"
@@ -379,6 +383,7 @@ $runtimeCreatedUserLists = @(
     "lists\user-domains-exclude.txt"
     "lists\user-ips.txt"
     "lists\user-ips-exclude.txt"
+    "state\domain-packs.json"
 )
 
 try {
@@ -388,27 +393,37 @@ try {
         Copy-ProjectFile $relativePath
     }
     foreach ($directory in @("assets", "config\profiles", "lists")) {
-        Get-ChildItem -LiteralPath (Join-Path $projectRoot $directory) -File |
+        Get-ChildItem -LiteralPath (Join-Path $projectRoot $directory) -File -Recurse |
             ForEach-Object {
-                $relativePath = Join-Path $directory $_.Name
+                $relativePath = $_.FullName.Substring($projectRoot.Length + 1)
                 if ($relativePath -notin $runtimeCreatedUserLists) {
                     Copy-ProjectFile $relativePath
                 }
             }
     }
-    Get-ChildItem `
-        -LiteralPath (Join-Path $projectRoot "config\game-filters") `
-        -File `
-        -Recurse |
-        ForEach-Object {
-            Copy-ProjectFile $_.FullName.Substring($projectRoot.Length + 1)
-        }
-    Copy-ProjectFile "config\config.json"
+    foreach ($directory in @("config\game-filters", "config\network-mappings")) {
+        Get-ChildItem `
+            -LiteralPath (Join-Path $projectRoot $directory) `
+            -File `
+            -Recurse |
+            ForEach-Object {
+                Copy-ProjectFile $_.FullName.Substring($projectRoot.Length + 1)
+            }
+    }
+    foreach ($name in @(
+        "config.json"
+        "diagnostic-targets.json"
+        "rule-groups.json"
+    )) {
+        Copy-ProjectFile (Join-Path "config" $name)
+    }
     foreach ($name in @("targets.txt")) {
         Copy-ProjectFile (Join-Path "tests" $name)
     }
     Copy-ProjectFile "docs\PROFILE_FORMAT.md"
     Copy-ProjectFile "docs\GAME_FILTERS.md"
+    Copy-ProjectFile "docs\DOMAIN_PACKS.md"
+    Copy-ProjectFile "docs\DIAGNOSTICS.md"
     foreach ($name in $releaseToolFiles) {
         Copy-ProjectFile (Join-Path "tools" $name)
     }

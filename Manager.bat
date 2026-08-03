@@ -33,6 +33,8 @@ echo [10] Edit a traffic profile
 echo [11] Create a custom profile
 echo [12] Open the profile folder
 echo [13] Game filters
+echo [14] Domain packs
+echo [15] Application diagnostics
 echo.
 echo [0] Exit
 echo.
@@ -52,6 +54,8 @@ if "%menu_choice%"=="10" goto edit_profile
 if "%menu_choice%"=="11" goto create_profile
 if "%menu_choice%"=="12" goto open_profiles
 if "%menu_choice%"=="13" goto game_filters
+if "%menu_choice%"=="14" goto domain_packs
+if "%menu_choice%"=="15" goto application_diagnostics
 if "%menu_choice%"=="0" exit /b
 goto menu
 
@@ -130,6 +134,17 @@ goto menu
 
 :game_filters
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\game-filter-manager.ps1" manage
+goto menu
+
+:domain_packs
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\domain-pack-manager.ps1" manage
+goto menu
+
+:application_diagnostics
+cls
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\application-diagnostics.ps1" -Interactive
+echo.
+pause
 goto menu
 
 :background_controls

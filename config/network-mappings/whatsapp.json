@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "whatsapp",
+  "mode": "fixed",
+  "actions": ["install", "refresh"],
+  "address": "57.144.245.32",
+  "hosts": [
+    "web.whatsapp.com",
+    "www.whatsapp.com",
+    "static.whatsapp.net",
+    "pps.whatsapp.net",
+    "dit.whatsapp.net",
+    "mmg.whatsapp.net",
+    "graph.whatsapp.com",
+    "g.whatsapp.net",
+    "media-hel3-1.cdn.whatsapp.net",
+    "media-arn2-1.cdn.whatsapp.net"
+  ],
+  "discoverSuffixes": ["whatsapp.com", "whatsapp.net"]
+}

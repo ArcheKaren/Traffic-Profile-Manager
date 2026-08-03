@@ -11,19 +11,32 @@ permissions:
 
 jobs:
   project-checks:
+    name: Windows / ${{ matrix.shell }}
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
 
     steps:
       - name: Получение исходников
-        uses: actions/checkout@v4
+        uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3 # v6.2.0
 
       - name: Аудит исходников
-        shell: powershell
-        run: |
-          .\tools\test-project.ps1 -SkipRuntimeCheck
+        shell: ${{ matrix.shell }}
+        run: .\tools\test-project.ps1 -SkipRuntimeCheck
 
-      - name: Изолированный smoke-тест контроллера
+      - name: Изолированный smoke-тест
+        shell: ${{ matrix.shell }}
+        run: .\tests\smoke.ps1
+
+      - name: Проверка пути с Unicode и пробелами
         shell: powershell
         run: |
-          .\tests\smoke.ps1
+          $target = Join-Path $env:RUNNER_TEMP "Проверка Traffic Profile Manager"
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+          Get-ChildItem -LiteralPath . -Force |
+            Where-Object Name -ne ".git" |
+            Copy-Item -Destination $target -Recurse -Force
+          & (Join-Path $target "tools\test-project.ps1") -SkipRuntimeCheck

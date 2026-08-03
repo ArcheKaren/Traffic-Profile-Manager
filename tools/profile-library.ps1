@@ -54,6 +54,69 @@ function Resolve-TrafficProfilePath(
     return $fullPath
 }
 
+function Get-TrafficProfileRuleGroups([string]$AppRoot) {
+    $path = Join-Path $AppRoot "config\rule-groups.json"
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return @{}
+    }
+    $document = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
+    if ([int]$document.schemaVersion -ne 1 -or $document.matchGroups -isnot [pscustomobject]) {
+        throw "config\rule-groups.json has an unsupported structure."
+    }
+    $result = @{}
+    foreach ($property in $document.matchGroups.PSObject.Properties) {
+        $id = [string]$property.Name
+        if ($id -notmatch "^[a-zA-Z0-9_-]{1,80}$" -or $result.ContainsKey($id)) {
+            throw "Invalid or duplicate rule group: $id"
+        }
+        if ($property.Value -isnot [Array] -or @($property.Value).Count -eq 0) {
+            throw "Rule group '$id' must be a non-empty array."
+        }
+        $arguments = @()
+        foreach ($argument in @($property.Value)) {
+            if ($argument -isnot [string]) {
+                throw "Rule group '$id' contains a non-string argument."
+            }
+            $text = [string]$argument
+            if (
+                [string]::IsNullOrWhiteSpace($text) -or
+                $text.Length -gt 4096 -or
+                $text -match "[\r\n]" -or
+                -not $text.StartsWith("--")
+            ) {
+                throw "Rule group '$id' contains an invalid argument."
+            }
+            $arguments += $text
+        }
+        $result[$id] = $arguments
+    }
+    return $result
+}
+
+function Resolve-TrafficProfileDefinition(
+    [object]$Profile,
+    [string]$AppRoot
+) {
+    $copy = $Profile | ConvertTo-Json -Depth 30 | ConvertFrom-Json
+    $groups = Get-TrafficProfileRuleGroups $AppRoot
+    foreach ($rule in @($copy.rules)) {
+        $hasMatch = $rule.PSObject.Properties.Name -contains "match"
+        $hasGroup = $rule.PSObject.Properties.Name -contains "matchGroup"
+        if ($hasMatch -eq $hasGroup) {
+            throw "Rule '$($rule.name)' must define exactly one of 'match' or 'matchGroup'."
+        }
+        if ($hasGroup) {
+            $id = [string]$rule.matchGroup
+            if (-not $groups.ContainsKey($id)) {
+                throw "Rule '$($rule.name)' references unknown match group '$id'."
+            }
+            $rule.PSObject.Properties.Remove("matchGroup")
+            $rule | Add-Member -NotePropertyName match -NotePropertyValue @($groups[$id])
+        }
+    }
+    return $copy
+}
+
 function Test-TrafficProfileDefinition(
     [object]$Profile,
     [string]$ProfilePath,
@@ -150,6 +213,7 @@ function Test-TrafficProfileDefinition(
     $ruleNames = New-Object "Collections.Generic.HashSet[string]" (
         [StringComparer]::OrdinalIgnoreCase
     )
+    $matchGroups = Get-TrafficProfileRuleGroups $AppRoot
     foreach ($rule in @($Profile.rules)) {
         if ($rule -isnot [pscustomobject]) {
             throw "Every rule must be an object."
@@ -170,7 +234,21 @@ function Test-TrafficProfileDefinition(
                 throw "Rule '$ruleName' has an invalid scope."
             }
         }
-        foreach ($field in @("match", "actions")) {
+        $hasMatch = $rule.PSObject.Properties.Name -contains "match"
+        $hasGroup = $rule.PSObject.Properties.Name -contains "matchGroup"
+        if ($hasMatch -eq $hasGroup) {
+            throw "Rule '$ruleName' must define exactly one of 'match' or 'matchGroup'."
+        }
+        if ($hasGroup) {
+            $groupId = [string]$rule.matchGroup
+            if (
+                $groupId -notmatch "^[a-zA-Z0-9_-]{1,80}$" -or
+                -not $matchGroups.ContainsKey($groupId)
+            ) {
+                throw "Rule '$ruleName' references unknown match group '$groupId'."
+            }
+        }
+        foreach ($field in @("actions")) {
             if ($rule.$field -isnot [Array]) {
                 throw "Rule '$ruleName' field '$field' must be an array."
             }
@@ -189,6 +267,25 @@ function Test-TrafficProfileDefinition(
                     -not $text.StartsWith("--")
                 ) {
                     throw "Rule '$ruleName' contains an invalid '$field' argument."
+                }
+            }
+        }
+        if ($hasMatch) {
+            if ($rule.match -isnot [Array]) {
+                throw "Rule '$ruleName' field 'match' must be an array."
+            }
+            foreach ($argument in @($rule.match)) {
+                if ($argument -isnot [string]) {
+                    throw "Rule '$ruleName' contains a non-string 'match' argument."
+                }
+                $text = [string]$argument
+                if (
+                    [string]::IsNullOrWhiteSpace($text) -or
+                    $text.Length -gt 4096 -or
+                    $text -match "[\r\n]" -or
+                    -not $text.StartsWith("--")
+                ) {
+                    throw "Rule '$ruleName' contains an invalid 'match' argument."
                 }
             }
         }

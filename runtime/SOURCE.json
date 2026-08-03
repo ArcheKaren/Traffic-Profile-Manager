@@ -4,6 +4,11 @@
   "downloadedAt": "2026-07-27",
   "archiveSha256": "075604D8689A31E84CEA1D189B11FBE4ED5634948D8264EEB983A7CB3877602E",
   "extractedRoot": "zapret-win-bundle-master",
+  "bootstrapRelease": {
+    "tag": "v1.0.3",
+    "asset": "TrafficProfileManager.zip",
+    "sha256": "B8A831A85336E788A3343B2AE69C2F714254EE5B1D09D9C9A00085B0EB58A678"
+  },
   "runtimeFiles": {
     "winws2": {
       "path": "zapret-win-bundle-master\\blockcheck\\zapret2\\nfq2\\winws2.exe",

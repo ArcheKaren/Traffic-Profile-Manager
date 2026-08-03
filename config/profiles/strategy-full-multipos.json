@@ -8,43 +8,88 @@
     "udpOut": "443,19294-19344,50000-50100"
   },
   "blobs": [
-    {"name": "sample_discord", "path": "assets\\ACTIVE_DISCORD_UDP.bin"},
-    {"name": "sample_stun", "path": "assets\\stun.bin"},
-    {"name": "sample_tls", "path": "assets\\tls_clienthello_www_google_com.bin"}
+    {
+      "name": "sample_discord",
+      "path": "assets\\ACTIVE_DISCORD_UDP.bin"
+    },
+    {
+      "name": "sample_stun",
+      "path": "assets\\stun.bin"
+    },
+    {
+      "name": "sample_tls",
+      "path": "assets\\tls_clienthello_www_google_com.bin"
+    }
   ],
   "rules": [
     {
       "name": "discord-multipos",
       "scope": "first",
-      "match": ["--filter-tcp=443,2053,2083,2087,2096,8443", "--filter-l7=tls", "--hostlist-domains=discord.com,discord.gg,discord.app,discord.media,discordapp.com,discordapp.net,discordcdn.com"],
-      "actions": ["--out-range=-d10", "--payload=tls_client_hello", "--lua-desync=multidisorder:pos=1,sld+1,midsld"]
+      "matchGroup": "discord-tls",
+      "actions": [
+        "--out-range=-d10",
+        "--payload=tls_client_hello",
+        "--lua-desync=multidisorder:pos=1,sld+1,midsld"
+      ]
     },
     {
       "name": "whatsapp-multipos",
       "scope": "first",
-      "match": ["--filter-tcp=443", "--filter-l7=tls", "--hostlist-domains=whatsapp.com,whatsapp.net,wa.me,wl.co,whatsappbrand.com,fbcdn.net"],
-      "actions": ["--out-range=-d10", "--payload=tls_client_hello", "--lua-desync=multidisorder:pos=1,sld+1,midsld,endhost-2"]
+      "matchGroup": "whatsapp-tls",
+      "actions": [
+        "--out-range=-d10",
+        "--payload=tls_client_hello",
+        "--lua-desync=multidisorder:pos=1,sld+1,midsld,endhost-2"
+      ]
     },
     {
       "name": "http",
-      "match": ["--filter-tcp=80", "--filter-l7=http"],
-      "actions": ["--out-range=-d10", "--payload=http_req", "--lua-desync=multisplit:pos=method+2,host+1"]
+      "match": [
+        "--filter-tcp=80",
+        "--filter-l7=http"
+      ],
+      "actions": [
+        "--out-range=-d10",
+        "--payload=http_req",
+        "--lua-desync=multisplit:pos=method+2,host+1"
+      ]
     },
     {
       "name": "tls",
-      "match": ["--filter-tcp=443", "--filter-l7=tls"],
-      "actions": ["--out-range=-d10", "--payload=tls_client_hello", "--lua-desync=multidisorder:pos=1,sld+1,midsld,endhost-2"]
+      "match": [
+        "--filter-tcp=443",
+        "--filter-l7=tls"
+      ],
+      "actions": [
+        "--out-range=-d10",
+        "--payload=tls_client_hello",
+        "--lua-desync=multidisorder:pos=1,sld+1,midsld,endhost-2"
+      ]
     },
     {
       "name": "quic",
-      "match": ["--filter-udp=443", "--filter-l7=quic"],
-      "actions": ["--payload=quic_initial", "--lua-desync=drop"]
+      "match": [
+        "--filter-udp=443",
+        "--filter-l7=quic"
+      ],
+      "actions": [
+        "--payload=quic_initial",
+        "--lua-desync=drop"
+      ]
     },
     {
       "name": "discord-media",
       "scope": "all",
-      "match": ["--filter-udp=19294-19344,50000-50100", "--filter-l7=discord,stun"],
-      "actions": ["--out-range=-d10", "--payload=stun,discord_ip_discovery", "--lua-desync=fake:blob=sample_stun", "--lua-desync=fake:blob=sample_discord:repeats=3"]
+      "match": [
+        "--filter-udp=19294-19344,50000-50100",
+        "--filter-l7=discord,stun"
+      ],
+      "actions": [
+        "--out-range=-d10",
+        "--payload=stun,discord_ip_discovery",
+        "--lua-desync=fake:blob=sample_stun",
+        "--lua-desync=fake:blob=sample_discord:repeats=3"
+      ]
     }
   ]
 }

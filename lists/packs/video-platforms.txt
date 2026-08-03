@@ -1,0 +1,22 @@
+# Video platforms
+youtube.com
+youtu.be
+youtube-nocookie.com
+youtubekids.com
+googlevideo.com
+ytimg.com
+yt3.ggpht.com
+yt4.ggpht.com
+yt3.googleusercontent.com
+youtube.googleapis.com
+youtubei.googleapis.com
+youtubeembeddedplayer.googleapis.com
+wide-youtube.l.google.com
+youtube-ui.l.google.com
+yt-video-upload.l.google.com
+ytimg.l.google.com
+ggpht.com
+yt.be
+jnn-pa.googleapis.com
+play.google.com
+returnyoutubedislikeapi.com
