@@ -76,12 +76,12 @@ jobs:
               --notes-file release\release-notes.md `
               --latest
             gh release upload $tag `
-              "release\TrafficProfileManager.zip#Portable Windows Build" `
+              release\TrafficProfileManager.zip `
               release\SHA256SUMS.txt `
               --clobber
           } else {
             gh release create $tag `
-              "release\TrafficProfileManager.zip#Portable Windows Build" `
+              release\TrafficProfileManager.zip `
               release\SHA256SUMS.txt `
               --verify-tag `
               --title "Traffic Profile Manager $version" `
