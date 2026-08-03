@@ -162,6 +162,7 @@ function Initialize-App {
         "config\game-filters",
         "lists",
         "lists\packs",
+        "lists\user-packs",
         "logs",
         "runtime",
         "state"
@@ -1105,8 +1106,8 @@ function Show-Status {
 
 function Invoke-DomainPackCommand([string[]]$InputArgs) {
     $action = if ($InputArgs.Count -ge 1) { $InputArgs[0].ToLowerInvariant() } else { "list" }
-    if ($action -notin @("list", "enable", "disable", "rebuild")) {
-        throw "Usage: zapretctl pack list|enable|disable|rebuild [pack-id]"
+    if ($action -notin @("list", "enable", "disable", "rebuild", "create")) {
+        throw "Usage: zapretctl pack list|enable|disable|rebuild|create [pack-id]"
     }
     $id = if ($InputArgs.Count -ge 2) { $InputArgs[1] } else { "" }
     & (Get-AppPath "tools\domain-pack-manager.ps1") $action $id -RootPath $script:AppRoot
@@ -1231,7 +1232,8 @@ zapretctl - local traffic profile manager
   ip list [--exclude]                   show the list
   ip import <file> [--exclude]          import a list
   profile list|show|use <name>          manage profiles
-  pack list|enable|disable|rebuild      manage built-in domain packs
+  pack list|enable|disable|rebuild      manage domain packs
+  pack create <pack-id>                 create a custom domain pack
   diagnose [target-id] [-NoNetwork]     create local TXT and JSON reports
   runtime path <winws2.exe>             set an explicit runtime path
   start                                 start winws2

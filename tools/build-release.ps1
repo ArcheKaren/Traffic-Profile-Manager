@@ -396,7 +396,14 @@ try {
         Get-ChildItem -LiteralPath (Join-Path $projectRoot $directory) -File -Recurse |
             ForEach-Object {
                 $relativePath = $_.FullName.Substring($projectRoot.Length + 1)
-                if ($relativePath -notin $runtimeCreatedUserLists) {
+                $isUserPack = $relativePath.StartsWith(
+                    "lists\user-packs\",
+                    [StringComparison]::OrdinalIgnoreCase
+                )
+                if (
+                    $relativePath -notin $runtimeCreatedUserLists -and
+                    -not $isUserPack
+                ) {
                     Copy-ProjectFile $relativePath
                 }
             }

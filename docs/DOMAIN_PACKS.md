@@ -12,6 +12,7 @@ runtime. Его источники находятся в `lists\packs`. Все �
 
 ```text
 zapretctl pack list
+zapretctl pack create my-pack
 zapretctl pack enable meta-quest
 zapretctl pack disable general-web
 zapretctl pack rebuild
@@ -27,6 +28,42 @@ zapretctl pack rebuild
 `lists\user-domains.txt` и остальные `user-*` при этом не читаются и не
 изменяются. После переключения пакета перезапустите видимый профиль или службу.
 
-Чтобы добавить комплектный пакет, создайте TXT-файл с одним доменом в строке и
-зарегистрируйте его в `lists\catalog.json`. Домены не должны повторяться между
-пакетами. Перед публикацией выполните `tools\test-project.ps1`.
+## Пользовательские пакеты
+
+Создать собственный пакет можно в **Manager → Domain packs → Create a custom
+pack** или командой `zapretctl pack create my-pack`. Будет создана структура:
+
+```text
+lists\user-packs\my-pack\
+  pack.json
+  domains.txt
+```
+
+`pack.json` содержит описание пакета:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "my-pack",
+  "displayName": "my-pack",
+  "description": "Custom domain pack.",
+  "enabledByDefault": false
+}
+```
+
+ID состоит из строчных латинских букв, цифр и дефисов и совпадает с именем
+каталога. В `domains.txt` указывается по одному домену в строке; домены не должны
+повторяться внутри пакета или в других пакетах.
+
+Пакеты из `lists\user-packs` обнаруживаются автоматически и управляются так же,
+как комплектные. Некорректный пользовательский пакет пропускается с
+предупреждением, чтобы он не мешал работе остальных пакетов. Состояние включения
+хранится в `state\domain-packs.json`.
+
+Каталог `lists\user-packs` не входит в Git и релизный ZIP, поэтому собственные
+пакеты сохраняются локально при обновлении программы. `lists\user-domains.txt`
+остаётся доступен для единого пользовательского списка без разделения на пакеты.
+
+Чтобы добавить новый комплектный пакет в сам проект, создайте TXT-файл с одним
+доменом в строке и зарегистрируйте его в `lists\catalog.json`. Перед публикацией
+выполните `tools\test-project.ps1`.

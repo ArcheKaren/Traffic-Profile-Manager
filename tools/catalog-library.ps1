@@ -1,4 +1,9 @@
 $script:CatalogUtf8NoBom = New-Object Text.UTF8Encoding($false)
+$script:DomainPackWarnings = @()
+
+function Get-DomainPackWarnings {
+    return @($script:DomainPackWarnings)
+}
 
 function Get-CatalogMeaningfulLines([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @() }
@@ -34,7 +39,20 @@ function Resolve-CatalogFile(
     if ([IO.Path]::IsPathRooted($RelativePath)) {
         throw "'$FieldName' must use a relative path."
     }
-    $root = [IO.Path]::GetFullPath((Join-Path $AppRoot "lists\packs")).TrimEnd("\")
+    $normalized = $RelativePath.Replace("/", "\")
+    $root = if ($normalized.StartsWith(
+        "lists\packs\",
+        [StringComparison]::OrdinalIgnoreCase
+    )) {
+        [IO.Path]::GetFullPath((Join-Path $AppRoot "lists\packs")).TrimEnd("\")
+    } elseif ($normalized.StartsWith(
+        "lists\user-packs\",
+        [StringComparison]::OrdinalIgnoreCase
+    )) {
+        [IO.Path]::GetFullPath((Join-Path $AppRoot "lists\user-packs")).TrimEnd("\")
+    } else {
+        throw "'$FieldName' must stay inside a domain pack directory."
+    }
     $full = [IO.Path]::GetFullPath((Join-Path $AppRoot $RelativePath))
     if (-not $full.StartsWith($root + "\", [StringComparison]::OrdinalIgnoreCase)) {
         throw "'$FieldName' must stay inside '$root'."
@@ -43,13 +61,20 @@ function Resolve-CatalogFile(
         throw "Catalog pack was not found: $RelativePath"
     }
     $item = Get-Item -LiteralPath $full -Force
-    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-        throw "Catalog packs must not be reparse points: $RelativePath"
+    while ($item -and $item.FullName.Length -ge $root.Length) {
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Catalog packs must not use reparse points: $RelativePath"
+        }
+        if ($item.FullName -ieq $root) { break }
+        $parent = Split-Path -Parent $item.FullName
+        if (-not $parent -or -not (Test-Path -LiteralPath $parent)) { break }
+        $item = Get-Item -LiteralPath $parent -Force
     }
     return $full
 }
 
 function Get-TargetCatalog([string]$AppRoot) {
+    $script:DomainPackWarnings = @()
     $catalogPath = Join-Path $AppRoot "lists\catalog.json"
     if (-not (Test-Path -LiteralPath $catalogPath -PathType Leaf)) {
         return $null
@@ -80,7 +105,8 @@ function Get-TargetCatalog([string]$AppRoot) {
 
     $packIds = New-Object "Collections.Generic.HashSet[string]" ([StringComparer]::OrdinalIgnoreCase)
     $allDomains = New-Object "Collections.Generic.HashSet[string]" ([StringComparer]::OrdinalIgnoreCase)
-    foreach ($pack in @($catalog.packs)) {
+    $builtInPacks = @($catalog.packs)
+    foreach ($pack in $builtInPacks) {
         $id = [string]$pack.id
         if ($id -notmatch "^[a-z0-9][a-z0-9-]{0,63}$") {
             throw "A target pack ID is invalid."
@@ -104,7 +130,109 @@ function Get-TargetCatalog([string]$AppRoot) {
                 throw "Duplicate domain across target packs: $domain"
             }
         }
+        $pack | Add-Member -NotePropertyName userDefined -NotePropertyValue $false -Force
     }
+
+    $userPacks = New-Object "Collections.Generic.List[object]"
+    $userPackRoot = Join-Path $AppRoot "lists\user-packs"
+    $userPackDirectories = @()
+    if (Test-Path -LiteralPath $userPackRoot -PathType Container) {
+        try {
+            $userPackRootItem = Get-Item -LiteralPath $userPackRoot -Force
+            if ($userPackRootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "The user pack root must not be a reparse point."
+            }
+            $userPackDirectories = @(
+                Get-ChildItem -LiteralPath $userPackRoot -Directory |
+                    Sort-Object Name
+            )
+        } catch {
+            $script:DomainPackWarnings += (
+                "User packs were skipped: " + $_.Exception.Message
+            )
+        }
+        foreach ($directory in $userPackDirectories) {
+            try {
+                if ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                    throw "The pack directory must not be a reparse point."
+                }
+                $definitionPath = Join-Path $directory.FullName "pack.json"
+                $domainsPath = Join-Path $directory.FullName "domains.txt"
+                if (-not (Test-Path -LiteralPath $definitionPath -PathType Leaf)) {
+                    throw "pack.json was not found."
+                }
+                $definitionItem = Get-Item -LiteralPath $definitionPath -Force
+                if ($definitionItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                    throw "pack.json must not be a reparse point."
+                }
+                $definition = Get-Content -Raw -LiteralPath $definitionPath |
+                    ConvertFrom-Json
+                if ($definition -isnot [pscustomobject]) {
+                    throw "pack.json must contain one JSON object."
+                }
+                $id = [string]$definition.id
+                if (
+                    [int]$definition.schemaVersion -ne 1 -or
+                    $id -notmatch "^[a-z0-9][a-z0-9-]{0,63}$" -or
+                    $id -cne $directory.Name
+                ) {
+                    throw "pack.json has an invalid schema, ID, or directory name."
+                }
+                if ($packIds.Contains($id)) {
+                    throw "Pack ID '$id' is already used."
+                }
+                if ([string]::IsNullOrWhiteSpace([string]$definition.displayName)) {
+                    throw "displayName is required."
+                }
+                if ($definition.enabledByDefault -isnot [bool]) {
+                    throw "enabledByDefault must be boolean."
+                }
+                $relativeDomainsPath = $domainsPath.Substring(
+                    [IO.Path]::GetFullPath($AppRoot).TrimEnd("\").Length + 1
+                )
+                $validatedPath = Resolve-CatalogFile `
+                    $AppRoot `
+                    $relativeDomainsPath `
+                    "user-packs.domains"
+                $packDomains = New-Object "Collections.Generic.HashSet[string]" (
+                    [StringComparer]::OrdinalIgnoreCase
+                )
+                foreach ($domain in Get-CatalogMeaningfulLines $validatedPath) {
+                    Test-CatalogDomain $domain "user pack '$id'"
+                    $normalizedDomain = $domain.TrimStart("^").ToLowerInvariant()
+                    if (-not $packDomains.Add($normalizedDomain)) {
+                        throw "Duplicate domain in user pack '$id': $domain"
+                    }
+                    if ($allDomains.Contains($normalizedDomain)) {
+                        throw "Domain is already used by another pack: $domain"
+                    }
+                }
+                [void]$packIds.Add($id)
+                foreach ($domain in $packDomains) { [void]$allDomains.Add($domain) }
+                $userPacks.Add([pscustomobject]@{
+                    id = $id
+                    displayName = [string]$definition.displayName
+                    description = [string]$definition.description
+                    path = $relativeDomainsPath
+                    enabledByDefault = [bool]$definition.enabledByDefault
+                    sourceIds = @()
+                    userDefined = $true
+                })
+            } catch {
+                $script:DomainPackWarnings += (
+                    "User pack '$($directory.Name)' was skipped: " +
+                    $_.Exception.Message
+                )
+            }
+        }
+    }
+    $combinedPacks = New-Object "Collections.Generic.List[object]"
+    foreach ($pack in $builtInPacks) { $combinedPacks.Add($pack) }
+    foreach ($pack in $userPacks) { $combinedPacks.Add($pack) }
+    $catalog.PSObject.Properties.Remove("packs")
+    $catalog | Add-Member `
+        -NotePropertyName packs `
+        -NotePropertyValue $combinedPacks.ToArray()
     return $catalog
 }
 

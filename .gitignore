@@ -3,6 +3,7 @@
 /state/*
 /test-results/*
 /tests/.tmp-*/
+/lists/user-packs/
 
 # Local upstream/runtime checkouts
 /runtime/*

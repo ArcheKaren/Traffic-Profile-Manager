@@ -111,6 +111,40 @@ try {
         throw "Domain pack update did not rebuild domains.txt."
     }
     Invoke-Cli @("pack", "enable", "general-web") | Out-Null
+    Invoke-Cli @("pack", "create", "custom-test") | Out-Null
+    $customPackRoot = Join-Path $resolvedTest "lists\user-packs\custom-test"
+    if (
+        -not (Test-Path -LiteralPath (Join-Path $customPackRoot "pack.json")) -or
+        -not (Test-Path -LiteralPath (Join-Path $customPackRoot "domains.txt"))
+    ) {
+        throw "Custom domain pack files were not created."
+    }
+    [IO.File]::WriteAllText(
+        (Join-Path $customPackRoot "domains.txt"),
+        "custom-pack.example" + [Environment]::NewLine,
+        [Text.UTF8Encoding]::new($false)
+    )
+    Invoke-Cli @("pack", "enable", "custom-test") | Out-Null
+    $compiledDomains = [IO.File]::ReadAllText(
+        (Join-Path $resolvedTest "lists\domains.txt")
+    )
+    if (-not $compiledDomains.Contains("custom-pack.example")) {
+        throw "Enabled custom domain pack was not compiled into domains.txt."
+    }
+    if ([IO.File]::ReadAllText($preservedUserList) -ne $preservedContent) {
+        throw "Custom domain pack changed an existing user list."
+    }
+    $invalidPackRoot = Join-Path $resolvedTest "lists\user-packs\invalid-pack"
+    New-Item -ItemType Directory -Path $invalidPackRoot -Force | Out-Null
+    [IO.File]::WriteAllText(
+        (Join-Path $invalidPackRoot "pack.json"),
+        "{ invalid json" + [Environment]::NewLine,
+        [Text.UTF8Encoding]::new($false)
+    )
+    $invalidPackOutput = @(Invoke-Cli @("pack", "list"))
+    if (($invalidPackOutput -join [Environment]::NewLine) -notmatch "invalid-pack") {
+        throw "Invalid custom domain pack did not produce a warning."
+    }
 
     $idn = -join ([char[]](0x043F, 0x0440, 0x0438, 0x043C, 0x0435, 0x0440, 0x002E, 0x0440, 0x0444))
     Invoke-Cli @("domain", "add", $idn) | Out-Null
