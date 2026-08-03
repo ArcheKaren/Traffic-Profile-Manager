@@ -62,19 +62,26 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           $version = (Get-Content -Raw VERSION).Trim()
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) {
+          $previousErrorActionPreference = $ErrorActionPreference
+          try {
+            $ErrorActionPreference = "SilentlyContinue"
+            gh release view $tag *> $null
+            $releaseExists = $LASTEXITCODE -eq 0
+          } finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+          }
+          if ($releaseExists) {
             gh release edit $tag `
               --title "Traffic Profile Manager $version" `
               --notes-file release\release-notes.md `
               --latest
             gh release upload $tag `
-              release\TrafficProfileManager.zip `
+              "release\TrafficProfileManager.zip#Portable Windows Build" `
               release\SHA256SUMS.txt `
               --clobber
           } else {
             gh release create $tag `
-              release\TrafficProfileManager.zip `
+              "release\TrafficProfileManager.zip#Portable Windows Build" `
               release\SHA256SUMS.txt `
               --verify-tag `
               --title "Traffic Profile Manager $version" `
