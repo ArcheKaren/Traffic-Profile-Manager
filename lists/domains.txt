@@ -99,13 +99,19 @@ instagram.com
 cdninstagram.com
 facebook.com
 facebook.net
+facebook-hardware.com
+fbcdn.com
 fbcdn.net
 fbsbx.com
 messenger.com
 ig.me
 internalfb.com
 meta.com
+atmeta.com
 oculus.com
+oculuscdn.com
+oculusrift.com
+oculusvr.com
 fb.com
 fb.me
 whatsapp.biz
@@ -116,6 +122,11 @@ whatsapp.net
 wa.me
 wl.co
 whatsappbrand.com
+
+# Virtual reality companion software
+sidequestvr.com
+vrdesktop.net
+
 cdn-telegram.org
 comments.app
 contest.com
