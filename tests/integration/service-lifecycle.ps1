@@ -84,18 +84,42 @@ try {
     $serviceAcl = Get-Acl -LiteralPath $serviceRoot
     Assert-Condition $serviceAcl.AreAccessRulesProtected `
         "The protected deployment still inherits filesystem permissions."
-    $allowedSids = @("S-1-5-18", "S-1-5-32-544")
+    $privilegedSids = @("S-1-5-18", "S-1-5-32-544")
+    $usersSid = "S-1-5-32-545"
+    $allowedSids = @($privilegedSids + $usersSid)
+    $accessRules = @($serviceAcl.GetAccessRules(
+        $true,
+        $true,
+        [Security.Principal.SecurityIdentifier]
+    ))
     $unexpectedRule = @(
-        $serviceAcl.GetAccessRules(
-            $true,
-            $true,
-            [Security.Principal.SecurityIdentifier]
-        ) | Where-Object {
+        $accessRules | Where-Object {
             $_.IdentityReference.Value -notin $allowedSids
         }
     ) | Select-Object -First 1
     Assert-Condition ($null -eq $unexpectedRule) `
         "The protected deployment grants access to an unexpected identity."
+    $writeMask = (
+        [Security.AccessControl.FileSystemRights]::WriteData -bor
+        [Security.AccessControl.FileSystemRights]::AppendData -bor
+        [Security.AccessControl.FileSystemRights]::WriteExtendedAttributes -bor
+        [Security.AccessControl.FileSystemRights]::WriteAttributes -bor
+        [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+        [Security.AccessControl.FileSystemRights]::Delete -bor
+        [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+        [Security.AccessControl.FileSystemRights]::TakeOwnership
+    )
+    $unsafeUserRule = @(
+        $accessRules | Where-Object {
+            $_.IdentityReference.Value -eq $usersSid -and
+            $_.AccessControlType -eq (
+                [Security.AccessControl.AccessControlType]::Allow
+            ) -and
+            (([int64]$_.FileSystemRights -band [int64]$writeMask) -ne 0)
+        }
+    ) | Select-Object -First 1
+    Assert-Condition ($null -eq $unsafeUserRule) `
+        "The protected deployment grants write access to standard users."
 
     & $serviceTool task-on
     Assert-Condition ([bool](Get-ScheduledTask `
