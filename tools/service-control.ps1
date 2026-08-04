@@ -460,12 +460,21 @@ function Get-ManagedRefreshTask {
     foreach ($taskAction in @($task.Actions)) {
         $execute = [string]$taskAction.Execute
         $arguments = [string]$taskAction.Arguments
+        $fileMatch = [regex]::Match(
+            $arguments,
+            '(?i)(?:^|\s)-File\s+(?:"(?<quoted>[^"\r\n]+)"|(?<bare>[^\s"\r\n]+))(?=\s|$)'
+        )
         if (
             (Split-Path -Leaf $execute) -in @("powershell", "powershell.exe") -and
-            $arguments -match '(?i)(?:^|\s)-File\s+"(?<path>[^"]+)"'
+            $fileMatch.Success
         ) {
+            $scriptArgument = if ($fileMatch.Groups["quoted"].Success) {
+                $fileMatch.Groups["quoted"].Value
+            } else {
+                $fileMatch.Groups["bare"].Value
+            }
             $taskScript = [IO.Path]::GetFullPath(
-                [Environment]::ExpandEnvironmentVariables($Matches.path)
+                [Environment]::ExpandEnvironmentVariables($scriptArgument)
             )
             foreach ($knownWatcher in $knownWatchers) {
                 if ($taskScript.Equals(

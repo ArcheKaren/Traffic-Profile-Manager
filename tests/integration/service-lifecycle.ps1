@@ -124,6 +124,10 @@ try {
         "The service did not restart."
 } catch {
     $testFailure = $_
+    if ($env:GITHUB_ACTIONS -eq "true") {
+        $annotationMessage = $_.Exception.ToString().Replace("`r", " ").Replace("`n", " ")
+        Write-Host "::error title=Service lifecycle integration::$annotationMessage"
+    }
 } finally {
     try {
         if (
