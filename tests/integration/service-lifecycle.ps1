@@ -24,6 +24,12 @@ function Assert-Condition([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
 }
 
+function Write-CiFailure([string]$Message) {
+    if ($env:GITHUB_ACTIONS -ne "true") { return }
+    $annotationMessage = $Message.Replace("`r", " ").Replace("`n", " ")
+    Write-Host "::error title=Service lifecycle integration::$annotationMessage"
+}
+
 function Get-HostsHash {
     return (Get-FileHash -LiteralPath $hostsPath -Algorithm SHA256).Hash
 }
@@ -148,10 +154,7 @@ try {
         "The service did not restart."
 } catch {
     $testFailure = $_
-    if ($env:GITHUB_ACTIONS -eq "true") {
-        $annotationMessage = $_.Exception.ToString().Replace("`r", " ").Replace("`n", " ")
-        Write-Host "::error title=Service lifecycle integration::$annotationMessage"
-    }
+    Write-CiFailure $_.Exception.ToString()
 } finally {
     try {
         if (
@@ -167,28 +170,52 @@ try {
 }
 
 Wait-ServiceRemoval
+$postconditionFailures = New-Object "Collections.Generic.List[string]"
 if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
-    throw "The integration test left the service installed."
+    $postconditionFailures.Add("The integration test left the service installed.")
 }
 if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
-    throw "The integration test left the startup refresh task installed."
+    $postconditionFailures.Add(
+        "The integration test left the startup refresh task installed."
+    )
 }
 if (Get-Process -Name "winws2" -ErrorAction SilentlyContinue) {
-    throw "The integration test left a winws2 process running."
+    $postconditionFailures.Add(
+        "The integration test left a winws2 process running."
+    )
 }
 if (Test-Path -LiteralPath $serviceRoot) {
-    throw "The integration test left the protected deployment behind."
+    $postconditionFailures.Add(
+        "The integration test left the protected deployment behind."
+    )
 }
 if (Test-Path -LiteralPath $serviceState) {
-    throw "The integration test left the service profile state behind."
+    $postconditionFailures.Add(
+        "The integration test left the service profile state behind."
+    )
 }
 if (Test-HostsMarker) {
-    throw "The integration test left managed hosts mappings behind."
+    $postconditionFailures.Add(
+        "The integration test left managed hosts mappings behind."
+    )
 }
-if ((Get-HostsHash) -ne $originalHostsHash) {
-    throw "The integration test did not restore the original hosts file."
+$finalHostsHash = Get-HostsHash
+if ($finalHostsHash -ne $originalHostsHash) {
+    $postconditionFailures.Add(
+        "The original hosts file hash was $originalHostsHash; cleanup returned " +
+        "$finalHostsHash."
+    )
 }
-if ($cleanupFailure) { throw $cleanupFailure }
+if ($cleanupFailure) {
+    $postconditionFailures.Add(
+        "Cleanup failed: $($cleanupFailure.Exception.ToString())"
+    )
+}
+if ($postconditionFailures.Count -gt 0) {
+    $postconditionMessage = $postconditionFailures -join " "
+    Write-CiFailure $postconditionMessage
+    throw $postconditionMessage
+}
 if ($testFailure) { throw $testFailure }
 
 Write-Host "Service lifecycle integration test passed." -ForegroundColor Green
