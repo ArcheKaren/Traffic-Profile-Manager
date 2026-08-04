@@ -270,7 +270,9 @@ function Remove-ManagedWinDivertDriver {
     }
 
     & sc.exe stop WinDivert | Out-Null
+    $stopExitCode = $LASTEXITCODE
     & sc.exe delete WinDivert | Out-Null
+    $deleteExitCode = $LASTEXITCODE
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
     while (
         (Test-Path -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\WinDivert") -and
@@ -278,6 +280,16 @@ function Remove-ManagedWinDivertDriver {
     ) {
         Start-Sleep -Milliseconds 250
     }
+    $driverStillRegistered = Test-Path -LiteralPath (
+        "HKLM:\SYSTEM\CurrentControlSet\Services\WinDivert"
+    )
+    if ($deleteExitCode -ne 0 -and $driverStillRegistered) {
+        throw (
+            "WinDivert driver removal failed with sc.exe exit code " +
+            "$deleteExitCode (stop exit code $stopExitCode)."
+        )
+    }
+    $global:LASTEXITCODE = 0
 }
 
 function Remove-ServiceDeploymentItem([string]$Path, [switch]$Recurse) {

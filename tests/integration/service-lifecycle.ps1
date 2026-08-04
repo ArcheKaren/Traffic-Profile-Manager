@@ -224,3 +224,4 @@ if ($postconditionFailures.Count -gt 0) {
 if ($testFailure) { throw $testFailure }
 
 Write-Host "Service lifecycle integration test passed." -ForegroundColor Green
+$global:LASTEXITCODE = 0
