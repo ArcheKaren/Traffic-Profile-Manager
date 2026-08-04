@@ -235,6 +235,51 @@ function Assert-ServiceDeploymentOwnership {
     }
 }
 
+function Get-WinDivertDriverPath {
+    $registryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\WinDivert"
+    if (-not (Test-Path -LiteralPath $registryPath)) { return $null }
+    $imagePath = [string](
+        Get-ItemPropertyValue -LiteralPath $registryPath -Name ImagePath
+    )
+    $expanded = [Environment]::ExpandEnvironmentVariables(
+        $imagePath.Trim().Trim('"')
+    )
+    if ($expanded.StartsWith("\??\")) {
+        $expanded = $expanded.Substring(4)
+    } elseif ($expanded.StartsWith("\SystemRoot\", [StringComparison]::OrdinalIgnoreCase)) {
+        $expanded = Join-Path $env:SystemRoot $expanded.Substring(12)
+    }
+    if (-not [IO.Path]::IsPathRooted($expanded)) { return $null }
+    return [IO.Path]::GetFullPath($expanded)
+}
+
+function Remove-ManagedWinDivertDriver {
+    $driverPath = Get-WinDivertDriverPath
+    if (-not $driverPath) { return }
+    $expectedPath = [IO.Path]::GetFullPath(
+        (Join-Path $serviceRoot "runtime\WinDivert64.sys")
+    )
+    if (-not $driverPath.Equals(
+        $expectedPath,
+        [StringComparison]::OrdinalIgnoreCase
+    )) {
+        throw (
+            "The loaded WinDivert driver is not owned by this protected " +
+            "deployment. It was not modified: $driverPath"
+        )
+    }
+
+    & sc.exe stop WinDivert | Out-Null
+    & sc.exe delete WinDivert | Out-Null
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    while (
+        (Test-Path -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\WinDivert") -and
+        [DateTime]::UtcNow -lt $deadline
+    ) {
+        Start-Sleep -Milliseconds 250
+    }
+}
+
 function Remove-ServiceDeploymentItem([string]$Path, [switch]$Recurse) {
     $deadline = [DateTime]::UtcNow.AddSeconds(15)
     do {
@@ -604,6 +649,7 @@ switch ($Action) {
         Assert-ServiceDeploymentOwnership
         Remove-ManagedRefreshTask
         Remove-ManagedService
+        Remove-ManagedWinDivertDriver
         try {
             New-ServiceDeployment $Profile
             $controller = Join-Path $serviceRoot "zapretctl.ps1"
@@ -680,6 +726,7 @@ switch ($Action) {
             foreach ($cleanupOperation in @(
                 { Remove-ManagedRefreshTask },
                 { Remove-ManagedService },
+                { Remove-ManagedWinDivertDriver },
                 { Invoke-ServiceMapping cleanup },
                 { Remove-ServiceDeployment }
             )) {
@@ -697,6 +744,7 @@ switch ($Action) {
         Assert-ServiceDeploymentOwnership
         Remove-ManagedRefreshTask
         Remove-ManagedService
+        Remove-ManagedWinDivertDriver
         Invoke-ServiceMapping cleanup
         if (Test-Path -LiteralPath $profileState) {
             Remove-Item -LiteralPath $profileState -Force
