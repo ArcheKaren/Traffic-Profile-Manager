@@ -30,8 +30,9 @@ function Write-CiFailure([string]$Message) {
     Write-Host "::error title=Service lifecycle integration::$annotationMessage"
 }
 
-function Get-HostsHash {
-    return (Get-FileHash -LiteralPath $hostsPath -Algorithm SHA256).Hash
+function Get-HostsContentSignature {
+    $text = [IO.File]::ReadAllText($hostsPath)
+    return $text.TrimEnd([char[]]@("`r", "`n"))
 }
 
 function Test-HostsMarker {
@@ -71,7 +72,8 @@ if ($preexistingArtifacts.Count -gt 0 -or (Test-HostsMarker)) {
     )
 }
 
-$originalHostsHash = Get-HostsHash
+$originalHostsContent = Get-HostsContentSignature
+$originalHostsAcl = (Get-Acl -LiteralPath $hostsPath).Sddl
 
 try {
     & $serviceTool install $profile
@@ -199,12 +201,15 @@ if (Test-HostsMarker) {
         "The integration test left managed hosts mappings behind."
     )
 }
-$finalHostsHash = Get-HostsHash
-if ($finalHostsHash -ne $originalHostsHash) {
+$finalHostsContent = Get-HostsContentSignature
+if ($finalHostsContent -cne $originalHostsContent) {
     $postconditionFailures.Add(
-        "The original hosts file hash was $originalHostsHash; cleanup returned " +
-        "$finalHostsHash."
+        "Cleanup changed content outside the managed hosts block."
     )
+}
+$finalHostsAcl = (Get-Acl -LiteralPath $hostsPath).Sddl
+if ($finalHostsAcl -cne $originalHostsAcl) {
+    $postconditionFailures.Add("Cleanup changed the hosts file ACL.")
 }
 if ($cleanupFailure) {
     $postconditionFailures.Add(

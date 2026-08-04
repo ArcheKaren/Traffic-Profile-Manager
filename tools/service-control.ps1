@@ -235,6 +235,32 @@ function Assert-ServiceDeploymentOwnership {
     }
 }
 
+function Remove-ServiceDeploymentItem([string]$Path, [switch]$Recurse) {
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        if (-not (Test-Path -LiteralPath $Path)) { return }
+        try {
+            Remove-Item `
+                -LiteralPath $Path `
+                -Recurse:$Recurse `
+                -Force `
+                -ErrorAction Stop
+            return
+        } catch {
+            if (
+                [DateTime]::UtcNow -ge $deadline -or
+                (
+                    $_.Exception -isnot [IO.IOException] -and
+                    $_.Exception -isnot [UnauthorizedAccessException]
+                )
+            ) {
+                throw
+            }
+            Start-Sleep -Milliseconds 500
+        }
+    } while ($true)
+}
+
 function Remove-ServiceDeployment {
     Assert-ServiceDeploymentOwnership
     if (-not (Test-Path -LiteralPath $serviceRoot -PathType Container)) {
@@ -248,7 +274,14 @@ function Remove-ServiceDeployment {
     if ($reparsePoint) {
         throw "Refusing to remove a service deployment containing a reparse point: $($reparsePoint.FullName)"
     }
-    Remove-Item -LiteralPath $serviceRoot -Recurse -Force
+    foreach ($item in Get-ChildItem -LiteralPath $serviceRoot -Force) {
+        if ($item.FullName -ieq $serviceMarker) { continue }
+        Remove-ServiceDeploymentItem `
+            -Path $item.FullName `
+            -Recurse:$item.PSIsContainer
+    }
+    Remove-ServiceDeploymentItem -Path $serviceMarker
+    Remove-ServiceDeploymentItem -Path $serviceRoot
 }
 
 function Copy-ServiceTree([string]$RelativePath) {
@@ -665,10 +698,10 @@ switch ($Action) {
         Remove-ManagedRefreshTask
         Remove-ManagedService
         Invoke-ServiceMapping cleanup
-        Remove-ServiceDeployment
         if (Test-Path -LiteralPath $profileState) {
             Remove-Item -LiteralPath $profileState -Force
         }
+        Remove-ServiceDeployment
         Write-Host "Service removed and temporary mappings cleaned." -ForegroundColor Green
     }
     "status" {
