@@ -166,13 +166,13 @@ echo.
 set "background_choice="
 set /p "background_choice=Select an option: "
 set "background_action="
-if "%background_choice%"=="1" set "background_action=start"
-if "%background_choice%"=="2" set "background_action=stop"
-if "%background_choice%"=="3" set "background_action=task-on"
-if "%background_choice%"=="4" set "background_action=task-off"
-if "%background_choice%"=="5" set "background_action=refresh"
-if "%background_choice%"=="6" set "background_action=cleanup"
-if "%background_choice%"=="0" goto menu
+if "!background_choice!"=="1" set "background_action=start"
+if "!background_choice!"=="2" set "background_action=stop"
+if "!background_choice!"=="3" set "background_action=task-on"
+if "!background_choice!"=="4" set "background_action=task-off"
+if "!background_choice!"=="5" set "background_action=refresh"
+if "!background_choice!"=="6" set "background_action=cleanup"
+if "!background_choice!"=="0" goto menu
 if not defined background_action goto background_controls
 echo.
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\service-control.ps1" "!background_action!"

@@ -74,7 +74,9 @@ zapretctl - local traffic profile manager
   logs [--tail N]                       show the log
 
 Running without domain or IP targets is disabled by default to avoid processing
-all traffic accidentally. Settings are stored in config\config.json.
+all traffic accidentally. The explicitly enabled universal game transport is the
+only exception and applies to its selected TCP/UDP ports. Settings are stored in
+config\config.json.
 "@
 }
 

@@ -112,15 +112,16 @@ jobs:
             -File .\tests\smoke.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Проверка пути с Unicode и пробелами
+      - name: Проверка пути с Unicode, пробелами и апострофом
         shell: powershell
         run: |
-          $target = Join-Path $env:RUNNER_TEMP "Проверка Traffic Profile Manager"
+          $target = Join-Path $env:RUNNER_TEMP "Проверка Traffic Profile Manager's path"
           New-Item -ItemType Directory -Path $target -Force | Out-Null
           Get-ChildItem -LiteralPath . -Force |
             Where-Object Name -ne ".git" |
             Copy-Item -Destination $target -Recurse -Force
           & (Join-Path $target "tools\test-project.ps1") -SkipRuntimeCheck
+          & (Join-Path $target "tests\smoke.ps1")
 
   release-build:
     name: Сборка релизного ZIP
@@ -158,3 +159,31 @@ jobs:
             throw "Release archive was not created."
           }
           Get-FileHash -LiteralPath $archive -Algorithm SHA256 | Format-List
+
+  service-integration:
+    name: Жизненный цикл службы Windows
+    runs-on: windows-latest
+    timeout-minutes: 20
+    needs: project-checks
+
+    steps:
+      - name: Получение исходников
+        uses: actions/checkout@8f4b7f84864484a7bf31766abe9204da3cbe65b3 # v6.2.0
+
+      - name: Восстановление проверенного runtime
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $manifest = Get-Content -Raw runtime\SOURCE.json | ConvertFrom-Json
+          $directory = Join-Path $env:RUNNER_TEMP "tpm-runtime-bootstrap"
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          gh release download $manifest.bootstrapRelease.tag `
+            --pattern $manifest.bootstrapRelease.asset `
+            --dir $directory
+          .\tools\restore-runtime.ps1 `
+            -ArchivePath (Join-Path $directory $manifest.bootstrapRelease.asset)
+
+      - name: Проверка установки и очистки службы
+        shell: powershell
+        run: .\tests\integration\service-lifecycle.ps1

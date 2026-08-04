@@ -89,6 +89,7 @@ if ($sourceCheckout) {
     $requiredPaths += @(
         ".github\workflows\release.yml"
         ".github\workflows\validate.yml"
+        "tests\integration\service-lifecycle.ps1"
     )
 }
 $missingPaths = @(
@@ -196,14 +197,27 @@ $managerBatch = Get-Content -Raw -LiteralPath (Get-ProjectPath "Manager.bat")
 $profileRunner = Get-Content -Raw -LiteralPath (
     Get-ProjectPath "tools\run-profile.bat"
 )
+$promptVariables = @(
+    [regex]::Matches(
+        $managerBatch,
+        '(?im)^\s*set\s+/p\s+"?(?<name>[A-Za-z_][A-Za-z0-9_]*)='
+    ) |
+        ForEach-Object { $_.Groups["name"].Value } |
+        Sort-Object -Unique
+)
+$unsafePromptVariables = @(
+    $promptVariables |
+        Where-Object { $managerBatch.Contains("%" + $_ + "%") }
+)
 if (
     $cmdWrapper.Contains("%*") -or
-    $managerBatch -match '%(?:menu_choice|list_choice)%' -or
+    $unsafePromptVariables.Count -gt 0 -or
     $profileRunner -notmatch '\^\[A-Za-z0-9_-\]\{1,64\}\$'
 ) {
     Add-Failure (
         "Batch argument boundary failed: wrappers must not re-expand raw " +
-        "arguments or unvalidated menu/profile input."
+        "arguments or unvalidated menu/profile input. Unsafe prompt " +
+        "variables: $($unsafePromptVariables -join ', ')."
     )
 } else {
     Add-Success "Safe batch argument boundaries"
