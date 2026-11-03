@@ -1,4 +1,8 @@
 {
+    "Launch and service": "Запуск и служба",
+    "Lists, checks and background tasks": "Списки, проверки и фоновые задачи",
+    "Profiles, filters and applications": "Профили, фильтры и приложения",
+    "Settings and maintenance": "Настройки и обслуживание",
     "Run a profile in a visible window":  "Запустить профиль в видимом окне",
     "Install a profile as an automatic service":  "Установить профиль как автоматическую службу",
     "Remove the automatic service":  "Удалить автоматическую службу",

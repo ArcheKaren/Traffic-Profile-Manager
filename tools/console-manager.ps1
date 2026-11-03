@@ -16,11 +16,23 @@ function Read-MenuChoice([string]$Prompt) {
     return $answer
 }
 function Show-Options([string[]]$Items, [switch]$RootMenu) {
+    $sections = @{
+        0 = 'Launch and service'
+        4 = 'Lists, checks and background tasks'
+        9 = 'Profiles, filters and applications'
+        15 = 'Settings and maintenance'
+    }
     for ($index=0; $index -lt $Items.Count; $index++) {
+        if ($RootMenu -and $sections.ContainsKey($index)) {
+            Write-TpmUi ('  --- ' + (Get-TpmText $sections[$index]) + ' ---') -Tone Title
+        }
         Write-TpmUi ('[{0,2}] ' -f ($index+1)) -Tone Title -NoNewline
         Write-TpmUi $Items[$index] -Tone Info
     }
-    if ($RootMenu) { Write-TpmUi '[0] Exit' } else { Write-TpmUi '[0] Back' }
+    if ($RootMenu) {
+        Write-TpmUi ''
+        Write-TpmUi '[0] Exit' -Tone Muted
+    } else { Write-TpmUi '[0] Back' }
 }
 function Invoke-ManagerTool([string]$Name, [object[]]$Parameters = @()) {
     & (Join-Path (Join-Path $appRoot 'tools') $Name) @Parameters

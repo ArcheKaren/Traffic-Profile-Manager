@@ -53,6 +53,11 @@ $requiredPaths = @(
     'modules\TrafficProfileManager.Maintenance\TrafficProfileManager.Maintenance.psd1'
     "docs\LICENSE"
     "README.md"
+    "docs\README.en.md"
+    "docs\VERIFY.md"
+    "docs\media\manager-demo.gif"
+    "docs\media\README.md"
+    "docs\media\profile-comparison-20260728-125142.csv"
     "docs\THIRD-PARTY-LICENSES.txt"
     "Manager.bat"
     "zapretctl.ps1"
