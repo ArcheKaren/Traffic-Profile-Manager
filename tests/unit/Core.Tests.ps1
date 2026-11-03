@@ -49,6 +49,26 @@ Describe "TrafficProfileManager.Core shared helpers" {
         { Test-TpmArgumentVector @("ok", "nul$([char]0)value") } | Should -Throw
     }
 
+    It "loads Windows ACL commands in a Windows PowerShell child without changing its parent environment" {
+        $originalModulePath = $env:PSModulePath
+        $startInfo = New-TpmProcessStartInfo -FilePath "powershell.exe" -CreateNoWindow `
+            -RedirectStandardOutput -RedirectStandardError -ArgumentList @(
+                "-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+                'try { Get-Acl -LiteralPath $PSHOME -ErrorAction Stop | Out-Null; [Console]::Out.Write("ACL_OK") } catch { exit 1 }'
+            )
+        $process = [Diagnostics.Process]::Start($startInfo)
+        try {
+            $process.WaitForExit(15000) | Should -BeTrue
+            $output = $process.StandardOutput.ReadToEnd()
+            $process.ExitCode | Should -Be 0
+            $output | Should -BeExactly "ACL_OK"
+            $env:PSModulePath | Should -BeExactly $originalModulePath
+        } finally {
+            if (-not $process.HasExited) { $process.Kill() }
+            $process.Dispose()
+        }
+    }
+
     It "passes shell metacharacters as inert child-process arguments" {
         $values = @(
             "ampersand&whoami",

@@ -145,6 +145,21 @@ function New-TpmProcessStartInfo {
     $startInfo.FileName = $FilePath
     $startInfo.UseShellExecute = [bool]$UseShellExecute
     $startInfo.CreateNoWindow = [bool]$CreateNoWindow
+    if (-not $UseShellExecute -and $PSVersionTable.PSVersion.Major -ge 6 -and
+        [IO.Path]::GetFileName($FilePath) -ieq "powershell.exe") {
+        # Direct .NET launches do not apply PowerShell's Windows PowerShell module-path compatibility.
+        $legacyModulePath = $env:WindowsPowerShellPSModulePath
+        if ([string]::IsNullOrWhiteSpace($legacyModulePath)) {
+            $coreModulePaths = @(
+                (Join-Path $PSHOME "Modules")
+                (Join-Path ([Environment]::GetFolderPath("MyDocuments")) "PowerShell\Modules")
+                (Join-Path $env:ProgramFiles "PowerShell\Modules")
+            ) | ForEach-Object { $_.TrimEnd('\', '/') }
+            $legacyModulePath = (($env:PSModulePath -split [IO.Path]::PathSeparator) |
+                Where-Object { $_ -and $_.TrimEnd('\', '/') -notin $coreModulePaths }) -join [IO.Path]::PathSeparator
+        }
+        $startInfo.EnvironmentVariables["PSModulePath"] = $legacyModulePath
+    }
     if ($WorkingDirectory) { $startInfo.WorkingDirectory = $WorkingDirectory }
     $startInfo.WindowStyle = [Diagnostics.ProcessWindowStyle][Enum]::Parse(
         [Diagnostics.ProcessWindowStyle],

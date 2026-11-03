@@ -15,7 +15,7 @@ Import-Module (Join-Path $projectRoot (
 )) -Force
 $nativeSource = Join-Path $projectRoot "tests\fixtures\ForegroundConsole.cs"
 Add-Type -Path $nativeSource
-$shell = (Get-Command powershell.exe).Source
+$shell = (Get-Process -Id $PID).Path
 $ownedProcesses = New-Object Collections.Generic.List[object]
 $testPassed = $false
 
