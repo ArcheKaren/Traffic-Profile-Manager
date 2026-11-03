@@ -11,8 +11,8 @@ $projectRoot = if ($RootPath) {
 } else {
     Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 }
-$version = (Get-Content -Raw -LiteralPath (Join-Path $projectRoot "VERSION")).Trim()
-$changelog = [IO.File]::ReadAllText((Join-Path $projectRoot "CHANGELOG.md"))
+$version = (Get-Content -Raw -LiteralPath (Join-Path $projectRoot "metadata\VERSION")).Trim()
+$changelog = [IO.File]::ReadAllText((Join-Path $projectRoot "docs\CHANGELOG.md"))
 $pattern = "(?ms)^##\s+" + [regex]::Escape($version) +
     "\s+[^\r\n]*\r?\n(?<body>.*?)(?=^##\s+|\z)"
 $match = [regex]::Match($changelog, $pattern)

@@ -61,21 +61,19 @@ function Start-ZapretForeground([string]$ProfileName) {
                 $_ -ne "--daemon" -and -not $_.StartsWith("--pidfile=")
             }
     )
-    Write-Host ""
-    Write-Host "Profile: $ProfileName" -ForegroundColor Cyan
-    Write-Host `
-        "The traffic profile remains active while this window is open." `
-        -ForegroundColor Green
-    Write-Host `
-        "Press Ctrl+C or close the window to stop it." `
-        -ForegroundColor Yellow
-    Write-Host ""
-
-    $startInfo = New-TpmProcessStartInfo `
-        -FilePath $executable `
-        -ArgumentList $arguments `
-        -WorkingDirectory (Split-Path -Parent $executable)
-    $process = [Diagnostics.Process]::Start($startInfo)
+    $logRoot = Get-AppPath 'logs'
+    New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
+    $session = 'foreground-' + [DateTime]::Now.ToString('yyyyMMdd-HHmmss') + '-' + [Guid]::NewGuid().ToString('N').Substring(0,8)
+    $outputLog = Join-Path $logRoot ($session + '.stdout.log')
+    $errorLog = Join-Path $logRoot ($session + '.stderr.log')
+    $mappingNotice = ''
+    $mappingFailed = $false
+    Show-TpmProfileSession -ProfileId $ProfileName -LogPath $outputLog -ErrorPath $errorLog
+    $quotedArguments = ($arguments | ForEach-Object { ConvertTo-TpmWindowsArgument $_ }) -join ' '
+    $process = Start-Process -FilePath $executable -ArgumentList $quotedArguments `
+        -WorkingDirectory (Split-Path -Parent $executable) -NoNewWindow -PassThru `
+        -RedirectStandardOutput $outputLog -RedirectStandardError $errorLog
+    [void]$process.Handle
     $processStartTicks = $process.StartTime.ToUniversalTime().Ticks
     $windowsPidPath = Get-AppPath "state\winws2.windows.pid"
     Write-AtomicText $windowsPidPath ([string]$process.Id)
@@ -86,8 +84,9 @@ function Start-ZapretForeground([string]$ProfileName) {
     }
 
     $watcherStarted = $false
+    $watcherProcess = $null
     try {
-        $watcherPath = Get-AppPath "watch-foreground.ps1"
+        $watcherPath = Get-AppPath "tools\watch-foreground.ps1"
         $watcherArguments = New-Object "Collections.Generic.List[string]"
         foreach ($argument in @(
             "-NoLogo",
@@ -115,29 +114,35 @@ function Start-ZapretForeground([string]$ProfileName) {
         $watcherInfo = New-TpmProcessStartInfo `
             -FilePath "powershell.exe" `
             -ArgumentList $watcherArguments.ToArray() `
-            -UseShellExecute `
-            -WindowStyle Hidden
-        [void][Diagnostics.Process]::Start($watcherInfo)
+            -CreateNoWindow
+        $watcherProcess = [Diagnostics.Process]::Start($watcherInfo)
         $watcherStarted = $true
 
         try {
-            & (Get-AppPath "manage-network-mappings.ps1") refresh | Out-Host
+            $mappingOutput = @(& (Get-AppPath "tools\manage-network-mappings.ps1") refresh)
+            $mappingNotice = $mappingOutput -join ' '
         } catch {
-            Write-Warning (
-                "Secure mappings could not be refreshed: " +
-                $_.Exception.Message
-            )
+            $mappingFailed = $true
+            $mappingNotice = 'Secure mappings could not be refreshed: ' + $_.Exception.Message
         } finally {
             Write-AtomicText $mappingReadyPath "ready"
         }
 
+        $process.Refresh()
+        $state = if ($process.HasExited) { if ($process.ExitCode) { 'Failed' } else { 'Stopped' } } else { 'Running' }
+        Show-TpmProfileSession -ProfileId $ProfileName -LogPath $outputLog -ErrorPath $errorLog -State $state -MappingNotice $mappingNotice -MappingFailed:$mappingFailed
         $process.WaitForExit()
         if ($process.ExitCode -ne 0) {
+            Show-TpmProfileSession -ProfileId $ProfileName -LogPath $outputLog -ErrorPath $errorLog -State Failed -MappingNotice $(if ($mappingFailed) { $mappingNotice } else { '' }) -MappingFailed:$mappingFailed
+            Write-TpmStatus 'State' ('Exit code: ' + $process.ExitCode) Error
+            Write-TpmProfileLogTail @($errorLog,$outputLog)
             throw "winws2 exited with code $($process.ExitCode)."
         }
+        Show-TpmProfileSession -ProfileId $ProfileName -LogPath $outputLog -ErrorPath $errorLog -State Stopped -MappingNotice $(if ($mappingFailed) { $mappingNotice } else { '' }) -MappingFailed:$mappingFailed
     } finally {
         if (-not $process.HasExited) {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            [void]$process.WaitForExit(5000)
         }
         if (Test-Path -LiteralPath $mappingReadyPath) {
             Remove-Item `
@@ -145,8 +150,22 @@ function Start-ZapretForeground([string]$ProfileName) {
                 -Force `
                 -ErrorAction SilentlyContinue
         }
-        if (-not $watcherStarted) {
-            & (Get-AppPath "manage-network-mappings.ps1") cleanup *> $null
+        if ($watcherStarted -and $watcherProcess) {
+            [void]$watcherProcess.WaitForExit(5000)
+        }
+        try {
+            & (Get-AppPath "tools\manage-network-mappings.ps1") cleanup *> $null
+        } catch {
+            Write-Warning (
+                "Temporary network mappings could not be cleaned: " +
+                $_.Exception.Message
+            )
+        }
+        if ($watcherProcess -and -not $watcherProcess.HasExited) {
+            Stop-Process `
+                -Id $watcherProcess.Id `
+                -Force `
+                -ErrorAction SilentlyContinue
         }
         if (Test-Path -LiteralPath $windowsPidPath) {
             $storedPid = 0
@@ -206,14 +225,14 @@ function Start-Zapret([bool]$DryRun, [string]$ProfileName = "") {
         $standardOutput = $process.StandardOutput.ReadToEnd()
         $standardError = $process.StandardError.ReadToEnd()
         $process.WaitForExit()
-        if ($standardOutput) { Write-Host $standardOutput.TrimEnd() }
+        if ($standardOutput) { Write-TpmUi $standardOutput.TrimEnd() }
         if ($standardError) {
-            Write-Host $standardError.TrimEnd() -ForegroundColor Red
+            Write-TpmUi $standardError.TrimEnd() -ForegroundColor Red
         }
         if ($process.ExitCode -ne 0) {
             throw "Parameter validation exited with code $($process.ExitCode)."
         }
-        Write-Host "winws2 accepted the parameters."
+        Write-TpmUi "winws2 accepted the parameters."
         return
     }
     $windowsPidPath = Get-AppPath "state\winws2.windows.pid"
@@ -221,7 +240,7 @@ function Start-Zapret([bool]$DryRun, [string]$ProfileName = "") {
     Write-ProcessIdentity $process $executable
     Start-Sleep -Milliseconds 500
     if (-not $process.HasExited) {
-        Write-Host "winws2 started, Windows PID $($process.Id)"
+        Write-TpmUi "winws2 started, Windows PID $($process.Id)"
         return
     }
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
@@ -237,7 +256,7 @@ function Start-Zapret([bool]$DryRun, [string]$ProfileName = "") {
             )
         }
         if (-not $process.HasExited) {
-            Write-Host "winws2 started, Windows PID $($process.Id)"
+            Write-TpmUi "winws2 started, Windows PID $($process.Id)"
             return
         }
     }
@@ -261,7 +280,7 @@ function Stop-Zapret {
                 Remove-Item -LiteralPath $pidPath -Force
             }
         }
-        Write-Host "winws2 is not running."
+        Write-TpmUi "winws2 is not running."
         return
     }
     Stop-Process -Id $running -Force
@@ -275,19 +294,19 @@ function Stop-Zapret {
             Remove-Item -LiteralPath $pidPath -Force
         }
     }
-    Write-Host "winws2 stopped."
+    Write-TpmUi "winws2 stopped."
 }
 
 function Show-Status {
     Ensure-Initialized
     $running = Get-RunningPid
     if ($running) {
-        Write-Host "Status: running (PID $running)"
+        Write-TpmUi "Status: running (PID $running)"
     } else {
-        Write-Host "Status: stopped"
+        Write-TpmUi "Status: stopped"
     }
     $config = Get-Config
-    Write-Host "Profile: $($config.activeProfile)"
+    Write-TpmUi "Profile: $($config.activeProfile)"
     $baseDomains = @(
         Get-TpmMeaningfulLines (Get-AppPath "lists\domains.txt")
     ).Count
@@ -300,11 +319,11 @@ function Show-Status {
     $userIps = @(
         Get-TpmMeaningfulLines (Get-AppPath "lists\user-ips.txt")
     ).Count
-    Write-Host (
+    Write-TpmUi (
         "Domains: $($baseDomains + $userDomains) " +
         "(built-in: $baseDomains, custom: $userDomains)"
     )
-    Write-Host (
+    Write-TpmUi (
         "IP/CIDR: $($baseIps + $userIps) " +
         "(built-in: $baseIps, custom: $userIps)"
     )
@@ -314,7 +333,7 @@ function Show-Status {
         $enabledPacks = @($catalog.packs | Where-Object {
             $packState.Enabled.Contains([string]$_.id)
         })
-        Write-Host (
+        Write-TpmUi (
             "Domain catalog: $($catalog.revision) " +
             "($($enabledPacks.Count)/$(@($catalog.packs).Count) packs enabled)"
         )
@@ -325,7 +344,7 @@ function Adopt-ZapretProcess {
     Ensure-Initialized
     $running = Get-RunningPid
     if ($running) {
-        Write-Host "winws2 is already registered, Windows PID $running"
+        Write-TpmUi "winws2 is already registered, Windows PID $running"
         return
     }
     $candidates = @(Get-Process -Name "winws2" -ErrorAction SilentlyContinue)
@@ -339,7 +358,7 @@ function Adopt-ZapretProcess {
         (Get-AppPath "state\winws2.windows.pid") `
         ([string]$candidates[0].Id)
     Write-ProcessIdentity $candidates[0] $candidates[0].Path
-    Write-Host "Process registered, Windows PID $($candidates[0].Id)"
+    Write-TpmUi "Process registered, Windows PID $($candidates[0].Id)"
 }
 
 function Show-Render([string]$ProfileName = "") {
@@ -357,9 +376,9 @@ function Show-Doctor {
     Ensure-Initialized
     function Report([bool]$Ok, [string]$Text) {
         if ($Ok) {
-            Write-Host "[OK]   $Text" -ForegroundColor Green
+            Write-TpmUi "[OK]   $Text" -ForegroundColor Green
         } else {
-            Write-Host "[FAIL] $Text" -ForegroundColor Red
+            Write-TpmUi "[FAIL] $Text" -ForegroundColor Red
             $script:doctorFailures++
         }
     }
@@ -401,17 +420,21 @@ function Show-Doctor {
             "WinDivert.dll"
     }
     if ($script:doctorFailures -eq 0) {
-        Write-Host "Diagnostics passed."
+        Write-TpmUi "Diagnostics passed."
     } else {
-        Write-Host "Problems found: $script:doctorFailures"
+        Write-TpmUi "Problems found: $script:doctorFailures"
     }
 }
 
 function Show-Logs([string[]]$InputArgs) {
     Ensure-Initialized
     $path = Get-AppPath "logs\winws2.log"
+    $latest = Get-ChildItem -LiteralPath (Get-AppPath 'logs') -File -ErrorAction SilentlyContinue |
+        Where-Object { ($_.Name -eq 'winws2.log' -or $_.Name -like 'foreground-*.log') -and $_.Length -gt 0 } |
+        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    if ($latest) { $path = $latest.FullName }
     if (-not (Test-Path -LiteralPath $path)) {
-        Write-Host "The log has not been created yet."
+        Write-TpmUi "The log has not been created yet."
         return
     }
     $tail = 80
@@ -442,5 +465,5 @@ function Invoke-RuntimeCommand([string[]]$InputArgs) {
     $config = Get-Config
     $config.runtimePath = $path
     Save-Config $config
-    Write-Host "Runtime: $path"
+    Write-TpmUi "Runtime: $path"
 }

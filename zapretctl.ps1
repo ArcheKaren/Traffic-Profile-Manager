@@ -12,7 +12,13 @@ param(
     [Parameter(Position = 3)]
     [string]$Arg3,
 
-    [switch]$NoNetwork
+    [switch]$NoNetwork,
+
+    [Alias("-json")]
+    [switch]$Json,
+
+    [Alias("-apply")]
+    [switch]$Apply
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,6 +32,8 @@ $commandArguments = @(
         Where-Object { -not [string]::IsNullOrEmpty($_) }
 )
 if ($NoNetwork) { $commandArguments += "--no-network" }
+if ($Json) { $commandArguments += "--json" }
+if ($Apply) { $commandArguments += "--apply" }
 
 try {
     Import-Module (

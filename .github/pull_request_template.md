@@ -6,7 +6,7 @@
 
 - [ ] `tools\test-project.ps1 -SkipRuntimeCheck`
 - [ ] `tests\smoke.ps1`
-- [ ] `Validate Profiles.bat` — обязательно при изменении runtime или профилей
+- [ ] `tools\Validate Profiles.bat` — обязательно при изменении runtime или профилей
 - [ ] Проверена очистка видимого режима — обязательно при изменении жизненного цикла
 
 ## Влияние на систему

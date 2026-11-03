@@ -21,7 +21,7 @@ jobs:
       - name: Проверка версии
         shell: powershell
         run: |
-          $version = (Get-Content -Raw VERSION).Trim()
+          $version = (Get-Content -Raw metadata/VERSION).Trim()
           if ("v$version" -cne "${{ github.ref_name }}") {
             throw "Tag ${{ github.ref_name }} does not match VERSION $version."
           }
@@ -61,7 +61,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ github.ref_name }}"
-          $version = (Get-Content -Raw VERSION).Trim()
+          $version = (Get-Content -Raw metadata/VERSION).Trim()
           $previousErrorActionPreference = $ErrorActionPreference
           try {
             $ErrorActionPreference = "SilentlyContinue"

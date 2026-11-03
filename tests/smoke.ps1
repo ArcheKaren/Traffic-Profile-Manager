@@ -46,8 +46,12 @@ try {
         Remove-Item -LiteralPath $resolvedTest -Recurse -Force
     }
     $env:ZAPRETCTL_HOME = $resolvedTest
+    $fixtureModules = Join-Path $resolvedTest "modules"
+    New-Item -ItemType Directory -Path $fixtureModules -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $projectRoot "modules\TrafficProfileManager.Console") -Destination $fixtureModules -Recurse
 
     Invoke-Cli @("init") | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $resolvedTest "metadata") -Force | Out-Null
     $userListPaths = @(
         "lists\user-domains.txt"
         "lists\user-domains-exclude.txt"
@@ -223,7 +227,7 @@ try {
         throw "Profile accepted a blob outside the assets directory."
     }
 
-    $mappingTool = Join-Path $projectRoot "manage-network-mappings.ps1"
+    $mappingTool = Join-Path $projectRoot "tools\manage-network-mappings.ps1"
     $testHosts = Join-Path $resolvedTest "hosts"
     $temporaryMappingRoot = Join-Path $resolvedTest "config\network-mappings"
     New-Item -ItemType Directory -Path $temporaryMappingRoot -Force | Out-Null
@@ -456,6 +460,31 @@ try {
         throw "Mapping installation changed the hosts ACL."
     }
 
+    $managedBlock = [regex]::Match(
+        $hostsContent,
+        "(?ms)^# TrafficProfileManager Mapping BEGIN\r?$.*?" +
+            "^# TrafficProfileManager Mapping END\r?$"
+    ).Value
+    if (-not $managedBlock) {
+        throw "Managed mapping block could not be isolated for recovery test."
+    }
+    [IO.File]::WriteAllText(
+        $testHosts,
+        $hostsContent.TrimEnd() +
+            [Environment]::NewLine +
+            $managedBlock +
+            [Environment]::NewLine,
+        [Text.UTF8Encoding]::new($false)
+    )
+    if (
+        ([regex]::Matches(
+            [IO.File]::ReadAllText($testHosts),
+            [regex]::Escape("# TrafficProfileManager Mapping BEGIN")
+        )).Count -ne 2
+    ) {
+        throw "Duplicate mapping recovery fixture was not created."
+    }
+
     & powershell.exe `
         -NoLogo `
         -NoProfile `
@@ -467,7 +496,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Mapping cleanup failed." }
     $hostsContent = [IO.File]::ReadAllText($testHosts)
     if ($hostsContent.Contains("# TrafficProfileManager Mapping BEGIN")) {
-        throw "Managed mapping block was not removed."
+        throw "Duplicated managed mapping blocks were not removed."
     }
     if (-not $hostsContent.Contains("203.0.113.10 unrelated.example")) {
         throw "Mapping cleanup changed an unrelated hosts entry."
@@ -582,9 +611,18 @@ try {
         -LiteralPath (Join-Path $projectRoot "config\diagnostic-targets.json") `
         -Destination (Join-Path $resolvedTest "config\diagnostic-targets.json")
     Copy-Item `
-        -LiteralPath (Join-Path $projectRoot "VERSION") `
-        -Destination (Join-Path $resolvedTest "VERSION")
+        -LiteralPath (Join-Path $projectRoot "metadata\VERSION") `
+        -Destination (Join-Path $resolvedTest "metadata\VERSION")
     $diagnosticOutput = Join-Path $resolvedTest "test-results"
+    $versionInfo = (Invoke-Cli @("version", "--json")) -join "`n" | ConvertFrom-Json
+    $expectedVersion = [IO.File]::ReadAllText((Join-Path $resolvedTest "metadata\VERSION")).Trim()
+    if ($versionInfo.version -ne $expectedVersion -or $versionInfo.schemaVersion -ne 1) {
+        throw "Version command returned invalid build metadata."
+    }
+    $batchVersion = & (Join-Path $projectRoot "zapretctl.cmd") version --json
+    if ($LASTEXITCODE -ne 0 -or ($batchVersion | ConvertFrom-Json).version -ne $expectedVersion) {
+        throw "Batch version command failed."
+    }
     Invoke-Cli @("diagnose", "meta-quest", "-NoNetwork") | Out-Null
     $diagnosticJson = @(
         Get-ChildItem -LiteralPath $diagnosticOutput -Filter "*.json" -File

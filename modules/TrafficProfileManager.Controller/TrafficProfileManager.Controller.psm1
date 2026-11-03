@@ -1,4 +1,5 @@
 $script:ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+Import-Module (Join-Path $script:ProjectRoot 'modules\TrafficProfileManager.Console\TrafficProfileManager.Console.psd1') -ErrorAction Stop
 
 Import-Module (
     Join-Path $script:ProjectRoot `
@@ -51,6 +52,13 @@ function Show-Help {
 zapretctl - local traffic profile manager
 
   init                                  create configuration and lists
+  version [--json]                       show version and build identity
+  language [en|ru]                       choose the console language
+  overview | advice                     show status and recommended actions
+  backup create|preview|restore          save or restore user settings
+  update check|download|preview|apply     check and install verified updates
+  update rollback <transaction-id>       roll back a file operation
+  results list|use <profile-id>           inspect saved comparisons
   domain add|remove <domain>            modify the domain list
   domain exclude [add|remove] <domain>  modify domain exclusions
   domain list [--exclude]               show the list
@@ -93,11 +101,34 @@ function Invoke-TpmControllerCommand {
     )
 
     $script:AppRoot = [IO.Path]::GetFullPath($AppRoot)
+    Set-TpmUiRoot $script:AppRoot
     $commandName = $Command.ToLowerInvariant()
     switch ($commandName) {
+        { $_ -in @('overview','advice','language','backup','update','results') } {
+            & (Join-Path $script:ProjectRoot 'tools\maintenance.ps1') -Action $commandName -Arguments $CommandArgs -RootPath $script:AppRoot
+        }
+
         "help" { Show-Help }
         "--help" { Show-Help }
         "-h" { Show-Help }
+        "version" {
+            if ($CommandArgs.Count -gt 1 -or (
+                $CommandArgs.Count -eq 1 -and $CommandArgs[0] -ne "--json"
+            )) { throw "Usage: zapretctl version [--json]" }
+            $build = Get-TpmBuildInfo -AppRoot $script:AppRoot
+            if ($CommandArgs -contains "--json") {
+                $build | ConvertTo-Json
+            } else {
+                "Traffic Profile Manager $($build.version)"
+                "Commit: $(if ($build.commit) { $build.commit } else { 'unknown' })"
+                $changes = if ($null -eq $build.localChanges) { "unknown" } elseif (
+                    $build.localChanges
+                ) { "yes" } else { "no" }
+                "Source changes: $changes"
+                "Build metadata: $($build.source)"
+                if ($build.contentSha256) { "Build content SHA-256: $($build.contentSha256)" }
+            }
+        }
         "init" { Initialize-App }
         "domain" { Invoke-ListCommand "domain" $CommandArgs }
         "ip" { Invoke-ListCommand "ip" $CommandArgs }

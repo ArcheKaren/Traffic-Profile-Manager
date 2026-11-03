@@ -167,7 +167,10 @@ function New-TpmProcessStartInfo {
     return $startInfo
 }
 
+. (Join-Path $PSScriptRoot "BuildInfo.ps1")
+
 Export-ModuleMember -Function @(
+    "Get-TpmBuildInfo"
     "Get-TpmMeaningfulLines"
     "ConvertTo-TpmDomain"
     "ConvertTo-TpmIpNetwork"

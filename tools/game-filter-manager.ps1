@@ -39,6 +39,8 @@ $appRoot = if ($RootPath) {
     Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 }
 $filterRoot = Join-Path $appRoot "config\game-filters"
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) "modules\TrafficProfileManager.Console\TrafficProfileManager.Console.psd1") -ErrorAction Stop
+Set-TpmUiRoot $appRoot
 $utf8NoBom = New-Object Text.UTF8Encoding($false)
 
 . (Join-Path $PSScriptRoot "game-filter-library.ps1")
@@ -73,13 +75,13 @@ function Write-AtomicJson([string]$Path, [object]$Value) {
 function Get-RequestedTransportState([object]$Current) {
     $mode = $TransportMode.Trim().ToLowerInvariant()
     if (-not $mode) {
-        Write-Host ""
-        Write-Host "Select transport mode:"
-        Write-Host "  0. Off"
-        Write-Host "  1. TCP and UDP"
-        Write-Host "  2. TCP only"
-        Write-Host "  3. UDP only"
-        $modeChoice = (Read-Host "Mode (0-3, current: $($Current.Mode))").Trim()
+        Write-TpmUi ""
+        Write-TpmUi "Select transport mode:"
+        Write-TpmUi "  0. Off"
+        Write-TpmUi "  1. TCP and UDP"
+        Write-TpmUi "  2. TCP only"
+        Write-TpmUi "  3. UDP only"
+        $modeChoice = (Read-TpmUi "Mode (0-3, current: $(Get-TpmText $Current.Mode))").Trim()
         $mode = switch ($modeChoice) {
             "" { $Current.Mode }
             "0" { "off" }
@@ -99,7 +101,7 @@ function Get-RequestedTransportState([object]$Current) {
             $preset = if ($Current.Preset) { $Current.Preset } else { "balanced" }
         } else {
             $presetChoice = (
-                Read-Host "Preset: 1=Balanced, 2=Extended (current: $($Current.Preset))"
+                Read-TpmUi "Preset: 1=Balanced, 2=Extended (current: $(Get-TpmText $Current.Preset))"
             ).Trim()
             $preset = switch ($presetChoice) {
                 "" { $Current.Preset }
@@ -116,7 +118,7 @@ function Get-RequestedTransportState([object]$Current) {
     $tcp = $TcpPorts.Trim()
     if (-not $tcp) { $tcp = $defaultTcp }
     if ($mode -in @("tcp", "all") -and -not $TcpPorts.Trim()) {
-        $tcp = (Read-Host "TCP ports (default: $defaultTcp)").Trim()
+        $tcp = (Read-TpmUi "TCP ports (default: $defaultTcp)").Trim()
         if (-not $tcp) { $tcp = $defaultTcp }
     }
 
@@ -126,7 +128,7 @@ function Get-RequestedTransportState([object]$Current) {
     $udp = $UdpPorts.Trim()
     if (-not $udp) { $udp = $defaultUdp }
     if ($mode -in @("udp", "all") -and -not $UdpPorts.Trim()) {
-        $udp = (Read-Host "UDP ports (default: $defaultUdp)").Trim()
+        $udp = (Read-TpmUi "UDP ports (default: $defaultUdp)").Trim()
         if (-not $udp) { $udp = $defaultUdp }
     }
 
@@ -136,7 +138,7 @@ function Get-RequestedTransportState([object]$Current) {
     $fake = $UdpFake.Trim()
     if (-not $fake) { $fake = $defaultFake }
     if ($mode -in @("udp", "all") -and -not $UdpFake.Trim()) {
-        $fake = (Read-Host "UDP fake path (default: $defaultFake)").Trim()
+        $fake = (Read-TpmUi "UDP fake path (default: $defaultFake)").Trim()
         if (-not $fake) { $fake = $defaultFake }
     }
 
@@ -177,7 +179,7 @@ function Update-RunningMappings {
         $managedRuntimeActive = $true
     }
     if (-not $managedRuntimeActive) {
-        Write-Host "The change will take effect on the next profile start." `
+        Write-TpmUi "The change will take effect on the next profile start." `
             -ForegroundColor DarkGray
         return
     }
@@ -186,13 +188,13 @@ function Update-RunningMappings {
             & (Join-Path $PSScriptRoot "service-control.ps1") refresh |
                 Out-Host
         } else {
-            & (Join-Path $PSScriptRoot "..\manage-network-mappings.ps1") `
+            & (Join-Path $PSScriptRoot "manage-network-mappings.ps1") `
                 refresh `
                 -AppRoot $appRoot |
                 Out-Host
         }
-        Write-Host "Running mappings refreshed." -ForegroundColor Green
-        Write-Host (
+        Write-TpmUi "Running mappings refreshed." -ForegroundColor Green
+        Write-TpmUi (
             "Restart the active profile or service to apply domain, IP and " +
             "transport changes."
         ) -ForegroundColor Yellow
@@ -246,13 +248,13 @@ function Set-GameFilterTransport([string]$Id) {
             -Value ([pscustomobject]$transport)
     }
     Write-AtomicJson $filter.ManifestPath $manifest
-    Write-Host (
+    Write-TpmUi (
         "{0}: transport {1} ({2})" -f
         $filter.DisplayName,
         $transport.mode,
         $transport.preset
     ) -ForegroundColor Green
-    Write-Host (
+    Write-TpmUi (
         "Restart the active profile or service to apply transport changes."
     ) -ForegroundColor Yellow
 }
@@ -271,12 +273,12 @@ function Set-UniversalGameTransport {
         udpFake = $transport.udpFake
     }
     Write-AtomicJson (Get-UniversalGameTransportStatePath $appRoot) $state
-    Write-Host (
+    Write-TpmUi (
         "Universal game transport: {0} ({1})" -f
         $transport.mode,
         $transport.preset
     ) -ForegroundColor Green
-    Write-Host (
+    Write-TpmUi (
         "Restart the active profile or service to apply transport changes."
     ) -ForegroundColor Yellow
 }
@@ -308,7 +310,7 @@ function Set-GameFilterEnabled(
         [void]$ids.Remove($id)
     }
     Save-EnabledIds @($ids | ForEach-Object { [string]$_ })
-    Write-Host (
+    Write-TpmUi (
         "{0}: {1}" -f
         $filter.DisplayName,
         $(if ($Enabled) { "enabled" } else { "disabled" })
@@ -320,7 +322,7 @@ function New-GameFilter {
     $id = if ($FilterId) {
         $FilterId.Trim().ToLowerInvariant()
     } else {
-        (Read-Host "Filter ID, for example my-game").Trim().ToLowerInvariant()
+        (Read-TpmUi "Filter ID, for example my-game").Trim().ToLowerInvariant()
     }
     if ($id -notmatch "^[a-z0-9][a-z0-9_-]{0,63}$") {
         throw "Use 1-64 lowercase letters, numbers, '-' or '_'."
@@ -332,7 +334,7 @@ function New-GameFilter {
     $name = if ($DisplayName) {
         $DisplayName.Trim()
     } else {
-        (Read-Host "Display name").Trim()
+        (Read-TpmUi "Display name").Trim()
     }
     if (-not $name) { $name = $id }
     if ($name.Length -gt 80) {
@@ -376,15 +378,15 @@ function New-GameFilter {
     Write-AtomicLines (Join-Path $path "ips-exclude.txt") @(
         "# IP/CIDR exclusions for this game. One per line."
     )
-    Write-Host "Created: $path" -ForegroundColor Green
-    Write-Host "The filter is disabled until you enable it."
+    Write-TpmUi "Created: $path" -ForegroundColor Green
+    Write-TpmUi "The filter is disabled until you enable it."
     Start-Process -FilePath "explorer.exe" -ArgumentList @('"{0}"' -f $path)
 }
 
 function Show-GameFilters([switch]$Detailed) {
     $filters = @(Get-GameFilters $appRoot -IncludeInvalid)
     if ($filters.Count -eq 0) {
-        Write-Host "No game filters were found."
+        Write-TpmUi "No game filters were found."
         return @()
     }
     for ($index = 0; $index -lt $filters.Count; $index++) {
@@ -396,27 +398,22 @@ function Show-GameFilters([switch]$Detailed) {
         } else {
             " "
         }
-        Write-Host ("[{0}] [{1}] {2}" -f ($index + 1), $marker, $filter.DisplayName)
-        Write-Host "        $($filter.Id)" -ForegroundColor DarkGray
+        Write-TpmUi ("[{0}] [{1}] {2}" -f ($index + 1), $marker, (Get-TpmText $filter.DisplayName))
+        Write-TpmUi "        $($filter.Id)" -ForegroundColor DarkGray
         if ($Detailed -and $filter.Description) {
-            Write-Host "        $($filter.Description)" -ForegroundColor DarkGray
+            Write-TpmUi "        $($filter.Description)" -ForegroundColor DarkGray
         }
         if ($filter.Valid) {
             $transportText = if ($filter.Transport.Mode -eq "off") {
-                "Transport: off"
+                Get-TpmText 'Transport: off'
             } else {
-                $modeName = if ($filter.Transport.Mode -eq "all") {
-                    "TCP+UDP"
-                } else {
-                    $filter.Transport.Mode.ToUpperInvariant()
-                }
-                "Transport: $modeName, " +
-                    "$($filter.Transport.Preset)"
+                $modeName = if ($filter.Transport.Mode -eq "all") { 'TCP+UDP' } else { $filter.Transport.Mode.ToUpperInvariant() }
+                Get-TpmText 'Transport: {0}, {1}' -Values @($modeName,(Get-TpmText $filter.Transport.Preset))
             }
-            Write-Host "        $transportText" -ForegroundColor DarkGray
+            Write-TpmUi "        $transportText" -ForegroundColor DarkGray
         }
         if (-not $filter.Valid) {
-            Write-Host "        ERROR: $($filter.Error)" -ForegroundColor Red
+            Write-TpmUi "        ERROR: $($filter.Error)" -ForegroundColor Red
         }
     }
     return $filters
@@ -427,9 +424,9 @@ function Invoke-Validation {
     $invalid = @($filters | Where-Object { -not $_.Valid })
     foreach ($filter in $filters) {
         if ($filter.Valid) {
-            Write-Host "[OK]   $($filter.Id)" -ForegroundColor Green
+            Write-TpmUi "[OK]   $($filter.Id)" -ForegroundColor Green
         } else {
-            Write-Host "[FAIL] $($filter.Id): $($filter.Error)" `
+            Write-TpmUi "[FAIL] $($filter.Id): $($filter.Error)" `
                 -ForegroundColor Red
         }
     }
@@ -437,7 +434,7 @@ function Invoke-Validation {
     $known = @($filters.Id)
     foreach ($id in $enabledIds) {
         if ($id -notin $known) {
-            Write-Host "[FAIL] Enabled filter was not found: $id" `
+            Write-TpmUi "[FAIL] Enabled filter was not found: $id" `
                 -ForegroundColor Red
             $invalid += [pscustomobject]@{ Id = $id }
         }
@@ -445,28 +442,28 @@ function Invoke-Validation {
     try {
         [void]@(Get-EnabledGameFilterMappings $appRoot)
     } catch {
-        Write-Host "[FAIL] $($_.Exception.Message)" -ForegroundColor Red
+        Write-TpmUi "[FAIL] $($_.Exception.Message)" -ForegroundColor Red
         $invalid += [pscustomobject]@{ Id = "mapping-conflict" }
     }
     if ($invalid.Count) {
         throw "$($invalid.Count) game filter error(s) found."
     }
-    Write-Host "All game filters are valid." -ForegroundColor Green
+    Write-TpmUi "All game filters are valid." -ForegroundColor Green
 }
 
 function Invoke-InteractiveManager {
     while ($true) {
         Clear-Host
-        Write-Host "=========================================================="
-        Write-Host "                       Game Filters"
-        Write-Host "=========================================================="
-        Write-Host ""
-        Write-Host (
+        Write-TpmUi "=========================================================="
+        Write-TpmUi "                       Game Filters"
+        Write-TpmUi "=========================================================="
+        Write-TpmUi ""
+        Write-TpmUi (
             "Enabled filters add their hosts mappings, domains, IPs and " +
             "exclusions to ordinary traffic profiles."
         )
-        Write-Host "Mappings remain active only while a profile/service is active."
-        Write-Host ""
+        Write-TpmUi "Mappings remain active only while a profile/service is active."
+        Write-TpmUi ""
         try {
             $universal = Get-UniversalGameTransport $appRoot
             $universalMode = if ($universal.Mode -eq "all") {
@@ -479,50 +476,53 @@ function Invoke-InteractiveManager {
             } else {
                 "Yellow"
             }
-            Write-Host (
-                "Universal transport: $universalMode, " +
-                "$($universal.Preset), TCP $($universal.TcpPorts), " +
-                "UDP $($universal.UdpPorts)"
-            ) -ForegroundColor $universalColor
+            $tcpDisplay = if ($universal.TcpPorts) { $universal.TcpPorts } else { '-' }
+            $udpDisplay = if ($universal.UdpPorts) { $universal.UdpPorts } else { '-' }
+            Write-TpmUi (Get-TpmText 'Universal transport: {0}, {1}, TCP {2}, UDP {3}' -Values @(
+                (Get-TpmText $universalMode),
+                (Get-TpmText $universal.Preset),
+                $tcpDisplay,
+                $udpDisplay
+            )) -ForegroundColor $universalColor
             if ($universal.Mode -ne "off") {
-                Write-Host (
+                Write-TpmUi (
                     "  Applies to all destination IPs on these ports."
                 ) -ForegroundColor Yellow
             }
         } catch {
-            Write-Host "Universal transport: INVALID" -ForegroundColor Red
-            Write-Host "  $($_.Exception.Message)" -ForegroundColor Red
+            Write-TpmUi "Universal transport: INVALID" -ForegroundColor Red
+            Write-TpmUi "  $($_.Exception.Message)" -ForegroundColor Red
         }
-        Write-Host ""
+        Write-TpmUi ""
         $filters = @(Show-GameFilters -Detailed)
-        Write-Host ""
-        Write-Host "Enter a number to enable or disable a filter."
-        Write-Host "[U] Configure universal TCP/UDP transport"
-        Write-Host "[C] Create a custom filter"
-        Write-Host "[T] Configure transport mode"
-        Write-Host "[E] Open a filter folder"
-        Write-Host "[O] Open the game filter folder"
-        Write-Host "[V] Validate all game filters"
-        Write-Host "[0] Back"
-        Write-Host ""
-        $choice = (Read-Host "Select an option").Trim()
+        Write-TpmUi ""
+        Write-TpmUi "Enter a number to enable or disable a filter."
+        Write-TpmUi "[U] Configure universal TCP/UDP transport"
+        Write-TpmUi "[C] Create a custom filter"
+        Write-TpmUi "[T] Configure transport mode"
+        Write-TpmUi "[E] Open a filter folder"
+        Write-TpmUi "[O] Open the game filter folder"
+        Write-TpmUi "[V] Validate all game filters"
+        Write-TpmUi "[0] Back"
+        Write-TpmUi ""
+        $choice = (Read-TpmUi "Select an option").Trim()
         if ($choice -eq "0") { return }
         if ($choice -match "^[uU]$") {
             try { Set-UniversalGameTransport } catch {
-                Write-Host $_.Exception.Message -ForegroundColor Red
+                Write-TpmUi $_.Exception.Message -ForegroundColor Red
             }
-            Read-Host "Press Enter to continue" | Out-Null
+            Read-TpmUi "Press Enter to continue" | Out-Null
             continue
         }
         if ($choice -match "^[cC]$") {
             try { New-GameFilter } catch {
-                Write-Host $_.Exception.Message -ForegroundColor Red
-                Read-Host "Press Enter to continue" | Out-Null
+                Write-TpmUi $_.Exception.Message -ForegroundColor Red
+                Read-TpmUi "Press Enter to continue" | Out-Null
             }
             continue
         }
         if ($choice -match "^[tT]$") {
-            $selectionText = Read-Host "Filter number"
+            $selectionText = Read-TpmUi "Filter number"
             $selection = 0
             if (
                 [int]::TryParse($selectionText, [ref]$selection) -and
@@ -532,10 +532,10 @@ function Invoke-InteractiveManager {
                 try {
                     Set-GameFilterTransport $filters[$selection - 1].Id
                 } catch {
-                    Write-Host $_.Exception.Message -ForegroundColor Red
+                    Write-TpmUi $_.Exception.Message -ForegroundColor Red
                 }
             }
-            Read-Host "Press Enter to continue" | Out-Null
+            Read-TpmUi "Press Enter to continue" | Out-Null
             continue
         }
         if ($choice -match "^[oO]$") {
@@ -546,13 +546,13 @@ function Invoke-InteractiveManager {
         }
         if ($choice -match "^[vV]$") {
             try { Invoke-Validation } catch {
-                Write-Host $_.Exception.Message -ForegroundColor Red
+                Write-TpmUi $_.Exception.Message -ForegroundColor Red
             }
-            Read-Host "Press Enter to continue" | Out-Null
+            Read-TpmUi "Press Enter to continue" | Out-Null
             continue
         }
         if ($choice -match "^[eE]$") {
-            $selectionText = Read-Host "Filter number"
+            $selectionText = Read-TpmUi "Filter number"
             $selection = 0
             if (
                 [int]::TryParse($selectionText, [ref]$selection) -and
@@ -575,9 +575,9 @@ function Invoke-InteractiveManager {
             try {
                 Set-GameFilterEnabled $filter.Id (-not $filter.Enabled)
             } catch {
-                Write-Host $_.Exception.Message -ForegroundColor Red
+                Write-TpmUi $_.Exception.Message -ForegroundColor Red
             }
-            Read-Host "Press Enter to continue" | Out-Null
+            Read-TpmUi "Press Enter to continue" | Out-Null
         }
     }
 }

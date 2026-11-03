@@ -52,4 +52,14 @@ Describe "Controller architecture" {
         ($output -join [Environment]::NewLine) |
             Should -Match "local traffic profile manager"
     }
+
+    It "exposes build identity as JSON without changing the controller exports" {
+        $json = Invoke-TpmControllerCommand -AppRoot $projectRoot `
+            -Command "version" -CommandArgs @("--json")
+        $build = $json | ConvertFrom-Json
+        $build.version | Should -Be ([IO.File]::ReadAllText(
+            (Join-Path $projectRoot "metadata\VERSION")
+        ).Trim())
+        $build.schemaVersion | Should -Be 1
+    }
 }

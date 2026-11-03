@@ -19,6 +19,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $appRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) "modules\TrafficProfileManager.Console\TrafficProfileManager.Console.psd1") -ErrorAction Stop
+Set-TpmUiRoot $appRoot
+
 $serviceName = "TrafficProfileService"
 $serviceDisplayName = "Traffic Profile Service"
 $mappingTaskName = "TrafficProfileMappingRefresh"
@@ -29,7 +32,7 @@ $commonDataRoot = [Environment]::GetFolderPath(
 $serviceContainer = Join-Path $commonDataRoot "TrafficProfileManager"
 $serviceRoot = Join-Path $serviceContainer "Service"
 $serviceMarker = Join-Path $serviceRoot ".tpm-managed-service"
-$serviceMappingTool = Join-Path $serviceRoot "manage-network-mappings.ps1"
+$serviceMappingTool = Join-Path $serviceRoot "tools\manage-network-mappings.ps1"
 $mappingWatcher = Join-Path $serviceRoot "tools\watch-service-mappings.ps1"
 Import-Module (
     Join-Path $appRoot `
@@ -476,7 +479,7 @@ function New-ServiceDeployment([string]$Profile) {
         ) "runtime\SOURCE.json"
         foreach ($relativePath in @(
             "zapretctl.ps1",
-            "manage-network-mappings.ps1",
+            "tools\manage-network-mappings.ps1",
             "tools\catalog-library.ps1",
             "tools\game-filter-library.ps1",
             "tools\profile-library.ps1",
@@ -501,6 +504,10 @@ function New-ServiceDeployment([string]$Profile) {
                 Out-Null
         }
         Sync-ServiceMutableData
+        foreach ($name in @('metadata\VERSION','metadata\BUILD-INFO.json')) {
+            $source = Join-Path $appRoot $name
+            if (Test-Path -LiteralPath $source -PathType Leaf) { Copy-ServiceFile $source $name }
+        }
 
         $sourceConfig = Get-Content -Raw -LiteralPath (
             Join-Path $appRoot "config\config.json"
@@ -528,10 +535,14 @@ function Invoke-ServiceMapping(
     [ValidateSet("install", "refresh", "cleanup")]
     [string]$MappingAction
 ) {
-    if (Test-Path -LiteralPath $serviceMappingTool -PathType Leaf) {
-        & $serviceMappingTool $MappingAction -AppRoot $serviceRoot
+    $mappingTool = $serviceMappingTool
+    if (-not (Test-Path -LiteralPath $mappingTool -PathType Leaf)) {
+        $mappingTool = Join-Path $serviceRoot "manage-network-mappings.ps1"
+    }
+    if (Test-Path -LiteralPath $mappingTool -PathType Leaf) {
+        & $mappingTool $MappingAction -AppRoot $serviceRoot
     } elseif ($MappingAction -eq "cleanup") {
-        & (Join-Path $appRoot "manage-network-mappings.ps1") cleanup
+        & (Join-Path $appRoot "tools\manage-network-mappings.ps1") cleanup
     } else {
         throw "Protected service mapping tool was not found."
     }
@@ -728,11 +739,11 @@ switch ($Action) {
             Start-Service -Name $serviceName
             Invoke-ServiceMapping refresh | Out-Null
             [IO.File]::WriteAllText($profileState, $Profile)
-            Write-Host "Service installed and started." -ForegroundColor Green
-            Write-Host "Profile: $Profile"
-            Write-Host "Startup mapping refresh: off"
-            Write-Host "Enable it explicitly from Manager.bat if required."
-            Write-Host "The privileged runtime is isolated in the protected ProgramData deployment."
+            Write-TpmUi "Service installed and started." -ForegroundColor Green
+            Write-TpmUi "Profile: $Profile"
+            Write-TpmUi "Startup mapping refresh: off"
+            Write-TpmUi "Enable it explicitly from Manager.bat if required."
+            Write-TpmUi "The privileged runtime is isolated in the protected ProgramData deployment."
         } catch {
             $installError = $_
             foreach ($cleanupOperation in @(
@@ -762,15 +773,15 @@ switch ($Action) {
             Remove-Item -LiteralPath $profileState -Force
         }
         Remove-ServiceDeployment
-        Write-Host "Service removed and temporary mappings cleaned." -ForegroundColor Green
+        Write-TpmUi "Service removed and temporary mappings cleaned." -ForegroundColor Green
     }
     "status" {
         $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
         if ($service) {
-            Write-Host "Service: installed"
-            Write-Host "State:   $($service.Status)"
+            Write-TpmUi "Service: installed"
+            Write-TpmUi "State:   $($service.Status)"
             if (Test-Path -LiteralPath $profileState) {
-                Write-Host "Profile: $((Get-Content -Raw -LiteralPath $profileState).Trim())"
+                Write-TpmUi "Profile: $((Get-Content -Raw -LiteralPath $profileState).Trim())"
             } elseif (
                 Test-Path `
                     -LiteralPath (Join-Path $serviceRoot "config\config.json") `
@@ -779,12 +790,12 @@ switch ($Action) {
                 $protectedConfig = Get-Content -Raw -LiteralPath (
                     Join-Path $serviceRoot "config\config.json"
                 ) | ConvertFrom-Json
-                Write-Host "Profile: $([string]$protectedConfig.activeProfile)"
+                Write-TpmUi "Profile: $([string]$protectedConfig.activeProfile)"
             }
         } else {
-            Write-Host "Service: not installed"
+            Write-TpmUi "Service: not installed"
         }
-        Write-Host (
+        Write-TpmUi (
             "Protected deployment: {0}" -f
             $(if (Test-Path -LiteralPath $serviceMarker -PathType Leaf) {
                 $serviceRoot
@@ -794,21 +805,21 @@ switch ($Action) {
         )
         $task = Get-ScheduledTask -TaskName $mappingTaskName -ErrorAction SilentlyContinue
         if ($task) {
-            Write-Host "Startup mapping refresh: on ($($task.State))"
+            Write-TpmUi "Startup mapping refresh: on ($($task.State))"
         } else {
-            Write-Host "Startup mapping refresh: off"
+            Write-TpmUi "Startup mapping refresh: off"
         }
         $processes = @(Get-Process -Name "winws2" -ErrorAction SilentlyContinue)
-        Write-Host "Runtime processes: $($processes.Count)"
+        Write-TpmUi "Runtime processes: $($processes.Count)"
         $hostsPath = Join-Path $env:SystemRoot "System32\drivers\etc\hosts"
         $managed = Select-String -LiteralPath $hostsPath `
             -Pattern "# TrafficProfileManager Mapping BEGIN" `
             -SimpleMatch -Quiet -ErrorAction SilentlyContinue
-        Write-Host "Temporary mappings: $(if ($managed) { 'active' } else { 'clean' })"
+        Write-TpmUi "Temporary mappings: $(if ($managed) { 'active' } else { 'clean' })"
         try {
             $gameFilters = @(Get-EnabledGameFilters $appRoot -ThrowOnInvalid)
             $filterNames = @($gameFilters | ForEach-Object DisplayName)
-            Write-Host (
+            Write-TpmUi (
                 "Game filters: {0}" -f
                 $(if ($filterNames.Count) {
                     $filterNames -join ", "
@@ -817,7 +828,7 @@ switch ($Action) {
                 })
             )
             $universal = Get-UniversalGameTransport $appRoot
-            Write-Host (
+            Write-TpmUi (
                 "Universal game transport: {0}" -f
                 $(if ($universal.Mode -eq "all") {
                     "TCP+UDP ($($universal.Preset))"
@@ -828,7 +839,7 @@ switch ($Action) {
                 })
             )
         } catch {
-            Write-Host "Game filters: invalid ($($_.Exception.Message))" `
+            Write-TpmUi "Game filters: invalid ($($_.Exception.Message))" `
                 -ForegroundColor Red
         }
     }
@@ -849,8 +860,8 @@ switch ($Action) {
         if ($task) {
             Start-ScheduledTask -TaskName $mappingTaskName
         }
-        Write-Host "Service started." -ForegroundColor Green
-        Write-Host "Startup mapping refresh: $(if ($task) { 'on' } else { 'off' })"
+        Write-TpmUi "Service started." -ForegroundColor Green
+        Write-TpmUi "Startup mapping refresh: $(if ($task) { 'on' } else { 'off' })"
     }
     "stop" {
         Assert-ManagedServiceOwnership
@@ -865,9 +876,9 @@ switch ($Action) {
             $service.WaitForStatus("Stopped", [TimeSpan]::FromSeconds(15))
         }
         Invoke-ServiceMapping cleanup
-        Write-Host "Service stopped for the current Windows session." -ForegroundColor Green
+        Write-TpmUi "Service stopped for the current Windows session." -ForegroundColor Green
         if ($task) {
-            Write-Host "Startup mapping refresh remains on for the next Windows startup."
+            Write-TpmUi "Startup mapping refresh remains on for the next Windows startup."
         }
     }
     "task-on" {
@@ -877,13 +888,13 @@ switch ($Action) {
             throw "Install the automatic service before enabling its startup refresh task."
         }
         Install-ManagedRefreshTask
-        Write-Host "Startup mapping refresh: on" -ForegroundColor Green
-        Write-Host "The task will begin at the next Windows startup."
+        Write-TpmUi "Startup mapping refresh: on" -ForegroundColor Green
+        Write-TpmUi "The task will begin at the next Windows startup."
     }
     "task-off" {
         Remove-ManagedRefreshTask
-        Write-Host "Startup mapping refresh: off" -ForegroundColor Green
-        Write-Host "The scheduled task was removed."
+        Write-TpmUi "Startup mapping refresh: off" -ForegroundColor Green
+        Write-TpmUi "The scheduled task was removed."
     }
     "refresh" {
         if (-not (Get-Process -Name "winws2" -ErrorAction SilentlyContinue)) {
@@ -896,17 +907,17 @@ switch ($Action) {
             Sync-ServiceMutableData
             Invoke-ServiceMapping refresh | Out-Host
         } else {
-            & (Join-Path $appRoot "manage-network-mappings.ps1") refresh |
+            & (Join-Path $appRoot "tools\manage-network-mappings.ps1") refresh |
                 Out-Host
         }
-        Write-Host "Temporary mappings refreshed." -ForegroundColor Green
+        Write-TpmUi "Temporary mappings refreshed." -ForegroundColor Green
     }
     "cleanup" {
         if (Get-Process -Name "winws2" -ErrorAction SilentlyContinue) {
             throw "Stop the active profile or service before cleaning temporary mappings."
         }
         Invoke-ServiceMapping cleanup
-        Write-Host "Temporary mappings cleaned." -ForegroundColor Green
+        Write-TpmUi "Temporary mappings cleaned." -ForegroundColor Green
     }
 }
     Write-ServiceOperation "succeeded"

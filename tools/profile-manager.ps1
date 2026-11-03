@@ -13,6 +13,8 @@ param(
 $ErrorActionPreference = "Stop"
 $appRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $profileRoot = Join-Path $appRoot "config\profiles"
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) "modules\TrafficProfileManager.Console\TrafficProfileManager.Console.psd1") -ErrorAction Stop
+Set-TpmUiRoot $appRoot
 $utf8NoBom = New-Object Text.UTF8Encoding($false)
 
 Import-Module (
@@ -25,10 +27,10 @@ function Show-InvalidProfiles {
 
     $invalid = @($Profiles | Where-Object { -not $_.Valid })
     if ($invalid.Count -eq 0) { return }
-    Write-Host ""
-    Write-Host "Invalid profile files:" -ForegroundColor Red
+    Write-TpmUi ""
+    Write-TpmUi "Invalid profile files:" -ForegroundColor Red
     foreach ($profile in $invalid) {
-        Write-Host "  $($profile.Id): $($profile.Error)" -ForegroundColor Red
+        Write-TpmUi "  $($profile.Id): $($profile.Error)" -ForegroundColor Red
     }
 }
 
@@ -49,19 +51,19 @@ function Select-TrafficProfile {
         throw "No suitable profile files were found in $profileRoot."
     }
 
-    Write-Host ""
-    Write-Host $Prompt -ForegroundColor Cyan
-    Write-Host ""
+    Write-TpmUi ""
+    Write-TpmUi $Prompt -ForegroundColor Cyan
+    Write-TpmUi ""
     for ($index = 0; $index -lt $profiles.Count; $index++) {
         $profile = $profiles[$index]
         $suffix = if ($profile.Valid) { "" } else { " [INVALID]" }
-        Write-Host ("[{0}] {1}{2}" -f ($index + 1), $profile.DisplayName, $suffix)
-        Write-Host "    $($profile.Id)" -ForegroundColor DarkGray
+        Write-TpmUi ("[{0}] {1}{2}" -f ($index + 1), $profile.DisplayName, $suffix)
+        Write-TpmUi "    $($profile.Id)" -ForegroundColor DarkGray
     }
-    Write-Host "[0] Cancel"
-    Write-Host ""
+    Write-TpmUi "[0] Cancel"
+    Write-TpmUi ""
 
-    $choiceText = Read-Host "Select a profile"
+    $choiceText = Read-TpmUi "Select a profile"
     $choice = 0
     if (-not [int]::TryParse($choiceText, [ref]$choice)) {
         return $null
@@ -96,11 +98,11 @@ function New-CustomProfile {
     }
     if (-not $selectedBase) { return }
 
-    Write-Host ""
+    Write-TpmUi ""
     $id = if ($ProfileId) {
         $ProfileId.Trim().ToLowerInvariant()
     } else {
-        (Read-Host "New profile ID, for example my-network").Trim().ToLowerInvariant()
+        (Read-TpmUi "New profile ID, for example my-network").Trim().ToLowerInvariant()
     }
     if ($id -notmatch "^[a-z0-9][a-z0-9_-]{0,63}$") {
         throw "Use 1-64 lowercase letters, numbers, '-' or '_'."
@@ -113,7 +115,7 @@ function New-CustomProfile {
     $displayName = if ($ProfileDisplayName) {
         $ProfileDisplayName.Trim()
     } else {
-        (Read-Host "Display name").Trim()
+        (Read-TpmUi "Display name").Trim()
     }
     if (-not $displayName) { $displayName = $id }
 
@@ -145,9 +147,9 @@ function New-CustomProfile {
         ($profile | ConvertTo-Json -Depth 20) + [Environment]::NewLine,
         $utf8NoBom
     )
-    Write-Host ""
-    Write-Host "Created: $path" -ForegroundColor Green
-    Write-Host "The manager and tests will detect it automatically."
+    Write-TpmUi ""
+    Write-TpmUi "Created: $path" -ForegroundColor Green
+    Write-TpmUi "The manager and tests will detect it automatically."
     Open-ProfileEditor $path
 }
 

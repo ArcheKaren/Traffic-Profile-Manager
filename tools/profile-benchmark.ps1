@@ -9,6 +9,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $appRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) "modules\TrafficProfileManager.Console\TrafficProfileManager.Console.psd1") -ErrorAction Stop
+Set-TpmUiRoot $appRoot
+
 $targetPath = if ($TargetFile) {
     [IO.Path]::GetFullPath($TargetFile)
 } else {
@@ -138,7 +141,7 @@ function Start-Profile([string]$ProfileId) {
                 } while ([DateTime]::UtcNow -lt $mappingDeadline)
                 if (-not $mappingReady) {
                     try {
-                        & (Join-Path $appRoot "manage-network-mappings.ps1") refresh `
+                        & (Join-Path $appRoot "tools\manage-network-mappings.ps1") refresh `
                             *>$null
                     } catch {
                         # Endpoint checks must still run when an optional mapping
@@ -337,7 +340,7 @@ function Invoke-TargetChecks($Targets) {
 
 try {
     if (-not (Test-TpmIsAdministrator)) {
-        throw "Run Test Profiles.bat and approve the administrator prompt."
+        throw "Run tools\Test Profiles.bat and approve the administrator prompt."
     }
     if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
         throw "curl.exe is required and was not found."
@@ -349,11 +352,11 @@ try {
         throw "Remove or stop the automatic service before running the comparison."
     }
     if ($invalidProfiles.Count -gt 0) {
-        Write-Host "Invalid profile files will be skipped:" -ForegroundColor Red
+        Write-TpmUi "Invalid profile files will be skipped:" -ForegroundColor Red
         foreach ($profile in $invalidProfiles) {
-            Write-Host "  $($profile.Id): $($profile.Error)" -ForegroundColor Red
+            Write-TpmUi "  $($profile.Id): $($profile.Error)" -ForegroundColor Red
         }
-        Write-Host ""
+        Write-TpmUi ""
     }
     if ($profileCatalog.Count -eq 0) {
         throw "No valid profile files were found."
@@ -378,7 +381,7 @@ try {
     )
     $env:TRAFFIC_PROFILE_BENCHMARK_LIST = $benchmarkHostList
 
-    & (Join-Path $appRoot "manage-network-mappings.ps1") install | Out-Host
+    & (Join-Path $appRoot "tools\manage-network-mappings.ps1") install | Out-Host
     $script:managedMappingsInstalled = $true
     $watcherPath = Join-Path $appRoot "tools\watch-benchmark.ps1"
     $watcherInfo = New-TpmProcessStartInfo `
@@ -399,14 +402,14 @@ try {
         -WindowStyle Hidden
     [void][Diagnostics.Process]::Start($watcherInfo)
 
-    Write-Host ""
-    Write-Host "Traffic Profile Comparison" -ForegroundColor Cyan
-    Write-Host "Profiles: $($selected.Count)   Endpoints: $($targets.Count)"
-    Write-Host "Results reflect the connection and routing active during this run."
-    Write-Host "OK = normal HTTP response; UP = endpoint reached with HTTP 5xx."
-    Write-Host ""
+    Write-TpmUi ""
+    Write-TpmUi "Traffic Profile Comparison" -ForegroundColor Cyan
+    Write-TpmUi "Profiles: $($selected.Count)   Endpoints: $($targets.Count)"
+    Write-TpmUi "Results reflect the connection and routing active during this run."
+    Write-TpmUi "OK = normal HTTP response; UP = endpoint reached with HTTP 5xx."
+    Write-TpmUi ""
     if (-not $NonInteractive) {
-        $answer = Read-Host "Press Enter to start, or type Q to cancel"
+        $answer = Read-TpmUi "Press Enter to start, or type Q to cancel"
         if ($answer -match '^(q|quit)$') { return }
     }
 
@@ -414,7 +417,7 @@ try {
     $profileIndex = 0
     foreach ($profile in $selected) {
         $profileIndex++
-        Write-Host (
+        Write-TpmUi (
             "[{0}/{1}] {2} - {3}" -f
             $profileIndex, $selected.Count, $profile.Number, $profile.Label
         ) -ForegroundColor Yellow
@@ -423,7 +426,7 @@ try {
             $checks = @(Invoke-TargetChecks $targets)
         } catch {
             $profileError = $_.Exception.Message
-            Write-Host "  Test error: $profileError" -ForegroundColor Red
+            Write-TpmUi "  Test error: $profileError" -ForegroundColor Red
             $checks = @(
                 foreach ($target in $targets) {
                     [pscustomobject]@{
@@ -460,12 +463,12 @@ try {
             } else {
                 "UP"
             }
-            Write-Host (
+            Write-TpmUi (
                 "  {0,-18} {1,3}  HTTP {2}" -f
                 $check.Target, $mark, $check.HttpCode
             )
         }
-        Write-Host ""
+        Write-TpmUi ""
     }
 
     $ranking = @(
@@ -493,6 +496,8 @@ try {
     $csvPath = Join-Path $resultRoot "profile-comparison-$stamp.csv"
     $textPath = Join-Path $resultRoot "profile-comparison-$stamp.txt"
     $allResults | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding UTF8
+    $metadata = @{schemaVersion=1;generatedAt=[DateTimeOffset]::Now.ToString('o');version=(Get-TpmBuildInfo $appRoot).version;targets=@($targets.Url);profiles=@($selected.Id)}
+    [IO.File]::WriteAllText((Join-Path $resultRoot "profile-comparison-$stamp.json"), ($metadata | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
     $summary = @(
         "Traffic Profile Comparison"
         "Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
@@ -511,19 +516,19 @@ try {
     )
     [IO.File]::WriteAllLines($textPath, $summary, [Text.UTF8Encoding]::new($false))
 
-    Write-Host "Ranking" -ForegroundColor Cyan
+    Write-TpmUi "Ranking" -ForegroundColor Cyan
     $ranking | Format-Table -AutoSize
-    Write-Host (
+    Write-TpmUi (
         "Best result: profile {0} - {1}" -f
         $ranking[0].Number, $ranking[0].Profile
     ) -ForegroundColor Green
-    Write-Host "Reports:"
-    Write-Host "  $textPath"
-    Write-Host "  $csvPath"
+    Write-TpmUi "Reports:"
+    Write-TpmUi "  $textPath"
+    Write-TpmUi "  $csvPath"
 } finally {
     Stop-ActiveProfile
     if ($script:managedMappingsInstalled) {
-        & (Join-Path $appRoot "manage-network-mappings.ps1") cleanup *> $null
+        & (Join-Path $appRoot "tools\manage-network-mappings.ps1") cleanup *> $null
     }
     Remove-Item Env:\TRAFFIC_PROFILE_BENCHMARK_LIST -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $benchmarkHostList) {

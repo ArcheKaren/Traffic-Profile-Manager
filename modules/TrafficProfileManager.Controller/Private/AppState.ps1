@@ -190,9 +190,9 @@ function Initialize-App {
         [void](Sync-DomainCatalog $script:AppRoot)
     }
 
-    Write-Host "Ready: $script:AppRoot"
-    Write-Host "Add a target: zapretctl domain add example.org"
-    Write-Host "Place the official Windows bundle in runtime and run: zapretctl doctor"
+    Write-TpmUi "Ready: $script:AppRoot"
+    Write-TpmUi "Add a target: zapretctl domain add example.org"
+    Write-TpmUi "Place the official Windows bundle in runtime and run: zapretctl doctor"
 }
 
 function Ensure-Initialized {
@@ -234,11 +234,11 @@ function Add-ListValue([string]$Kind, [string]$Value, [bool]$Exclude) {
     if ($lines | Where-Object {
         $_.Trim().ToLowerInvariant() -eq $normalized.ToLowerInvariant()
     }) {
-        Write-Host "Already present: $normalized"
+        Write-TpmUi "Already present: $normalized"
         return
     }
     Write-AtomicLines $path @($lines + $normalized)
-    Write-Host "Added: $normalized"
+    Write-TpmUi "Added: $normalized"
 }
 
 function Remove-ListValue([string]$Kind, [string]$Value, [bool]$Exclude) {
@@ -255,11 +255,11 @@ function Remove-ListValue([string]$Kind, [string]$Value, [bool]$Exclude) {
         }
     )
     if (-not $found) {
-        Write-Host "Not found: $normalized"
+        Write-TpmUi "Not found: $normalized"
         return
     }
     Write-AtomicLines $path $lines
-    Write-Host "Removed: $normalized"
+    Write-TpmUi "Removed: $normalized"
 }
 
 function Import-List([string]$Kind, [string]$Source, [bool]$Exclude) {
@@ -298,7 +298,7 @@ function Import-List([string]$Kind, [string]$Source, [bool]$Exclude) {
     }
     foreach ($newValue in $added) { $combined.Add([string]$newValue) }
     Write-AtomicLines $path $combined.ToArray()
-    Write-Host "New entries imported: $($added.Count)"
+    Write-TpmUi "New entries imported: $($added.Count)"
 }
 
 function Invoke-ListCommand([string]$Kind, [string[]]$InputArgs) {
@@ -334,7 +334,7 @@ function Invoke-ListCommand([string]$Kind, [string[]]$InputArgs) {
             $exclude = $InputArgs -contains "--exclude"
             $values = @(Get-TpmMeaningfulLines (Get-ListPath $Kind $exclude))
             if ($values.Count -eq 0) {
-                Write-Host "(list is empty)"
+                Write-TpmUi "(list is empty)"
                 return
             }
             $values | ForEach-Object { Write-Output $_ }
@@ -399,7 +399,7 @@ function Invoke-ProfileCommand([string[]]$InputArgs) {
             $config = Get-Config
             $config.activeProfile = $name
             Save-Config $config
-            Write-Host "Active profile: $name"
+            Write-TpmUi "Active profile: $name"
         }
         "show" {
             $profile = if ($InputArgs.Count -ge 2) {

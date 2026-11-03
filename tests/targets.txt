@@ -1,4 +1,4 @@
-# Endpoint pool used by Test Profiles.bat.
+# Endpoint pool used by tools\Test Profiles.bat.
 # Format: DisplayName = "https://address/"
 # Blank lines and lines beginning with # are ignored.
 

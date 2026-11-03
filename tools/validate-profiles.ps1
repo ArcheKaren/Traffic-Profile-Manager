@@ -1,5 +1,8 @@
 $ErrorActionPreference = "Stop"
 $appRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) "modules\TrafficProfileManager.Console\TrafficProfileManager.Console.psd1") -ErrorAction Stop
+Set-TpmUiRoot $appRoot
+
 Import-Module (
     Join-Path $appRoot `
         "modules\TrafficProfileManager.Profile\TrafficProfileManager.Profile.psd1"
@@ -12,7 +15,7 @@ $validationPath = Join-Path $stateRoot "last-validation.txt"
 $failed = 0
 $results = New-Object "Collections.Generic.List[string]"
 if ($profiles.Count -eq 0) {
-    Write-Host "No profile files were found." -ForegroundColor Red
+    Write-TpmUi "No profile files were found." -ForegroundColor Red
     $results.Add("No profile files were found.")
     [IO.File]::WriteAllLines(
         $validationPath,
@@ -22,7 +25,7 @@ if ($profiles.Count -eq 0) {
 }
 foreach ($profile in $profiles) {
     if (-not $profile.Valid) {
-        Write-Host "[FAIL] $($profile.Id)" -ForegroundColor Red
+        Write-TpmUi "[FAIL] $($profile.Id)" -ForegroundColor Red
         $results.Add("[FAIL] $($profile.Id)")
         $results.Add("       $($profile.Error)")
         $failed++
@@ -43,24 +46,24 @@ foreach ($profile in $profiles) {
 
     if ($succeeded) {
         $suffix = if ($attempt -gt 1) { " (attempt $attempt)" } else { "" }
-        Write-Host "[OK]   $($profile.Id)$suffix" -ForegroundColor Green
+        Write-TpmUi "[OK]   $($profile.Id)$suffix" -ForegroundColor Green
         $results.Add("[OK]   $($profile.Id)$suffix")
     } else {
-        Write-Host "[FAIL] $($profile.Id)" -ForegroundColor Red
+        Write-TpmUi "[FAIL] $($profile.Id)" -ForegroundColor Red
         $results.Add("[FAIL] $($profile.Id)")
         foreach ($line in $output) { $results.Add("       $line") }
         $failed++
     }
 }
 
-Write-Host ""
+Write-TpmUi ""
 if ($failed) {
-    Write-Host "$failed profile(s) failed validation." -ForegroundColor Red
+    Write-TpmUi "$failed profile(s) failed validation." -ForegroundColor Red
     $results.Add("$failed profile(s) failed validation.")
     [IO.File]::WriteAllLines($validationPath, $results.ToArray())
     exit 1
 }
-Write-Host "All profiles passed validation." -ForegroundColor Green
+Write-TpmUi "All profiles passed validation." -ForegroundColor Green
 $results.Add("All profiles passed validation.")
 [IO.File]::WriteAllLines($validationPath, $results.ToArray())
 exit 0

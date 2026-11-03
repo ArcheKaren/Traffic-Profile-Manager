@@ -2,6 +2,7 @@
 /logs/*
 /state/*
 /test-results/*
+/backups/
 /tests/.tmp-*/
 /lists/user-packs/
 

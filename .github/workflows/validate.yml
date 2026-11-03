@@ -112,6 +112,14 @@ jobs:
             -File .\tests\smoke.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Завершение foreground-сеанса
+        shell: powershell
+        run: |
+          $shellExecutable = (Get-Command "${{ matrix.shell }}.exe" -ErrorAction Stop).Source
+          & $shellExecutable -NoLogo -NoProfile -ExecutionPolicy Bypass `
+            -File .\tests\integration\foreground-lifecycle.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Проверка пути с Unicode, пробелами и апострофом
         shell: powershell
         run: |

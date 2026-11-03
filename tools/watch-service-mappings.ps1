@@ -8,7 +8,7 @@ param(
 
 $ErrorActionPreference = "SilentlyContinue"
 $appRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$mappingTool = Join-Path $appRoot "manage-network-mappings.ps1"
+$mappingTool = Join-Path $appRoot "tools\manage-network-mappings.ps1"
 
 if ($InitialDelaySeconds -gt 0) {
     Start-Sleep -Seconds $InitialDelaySeconds

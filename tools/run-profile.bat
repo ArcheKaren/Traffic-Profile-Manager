@@ -46,32 +46,13 @@ if not errorlevel 1 (
 )
 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\zapretctl.ps1" stop >nul 2>&1
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\manage-network-mappings.ps1" cleanup >nul 2>&1
-
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\manage-network-mappings.ps1" install
-if errorlevel 1 (
-  echo ERROR: Could not prepare temporary network mappings.
-  pause
-  exit /b 4
-)
-
-echo.
-echo Profile: %profile%
-echo The profile remains active while this window is open.
-echo Press Ctrl+C or close the window to stop it.
-echo.
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\tools\manage-network-mappings.ps1" cleanup >nul 2>&1
 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\zapretctl.ps1" foreground "%profile%"
 set "run_error=%errorlevel%"
 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\zapretctl.ps1" stop >nul 2>&1
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\manage-network-mappings.ps1" cleanup >nul 2>&1
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%cd%\tools\manage-network-mappings.ps1" cleanup >nul 2>&1
 
-echo.
-if not "%run_error%"=="0" (
-  echo Profile stopped with exit code %run_error%.
-) else (
-  echo Profile stopped.
-)
 pause
 exit /b %run_error%

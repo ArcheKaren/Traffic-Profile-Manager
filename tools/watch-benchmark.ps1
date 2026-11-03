@@ -27,7 +27,7 @@ while ($true) {
 
 & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `
     (Join-Path $appRoot "zapretctl.ps1") stop *> $null
-& (Join-Path $appRoot "manage-network-mappings.ps1") cleanup *> $null
+& (Join-Path $appRoot "tools\manage-network-mappings.ps1") cleanup *> $null
 
 $benchmarkList = Join-Path $appRoot "state\benchmark-domains.txt"
 if (Test-Path -LiteralPath $benchmarkList) {

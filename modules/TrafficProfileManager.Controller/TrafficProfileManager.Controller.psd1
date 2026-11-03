@@ -1,6 +1,6 @@
 @{
     RootModule = "TrafficProfileManager.Controller.psm1"
-    ModuleVersion = "1.2.0"
+    ModuleVersion = "1.2.1"
     GUID = "2c3f9587-7c80-4aeb-a482-e9feb4d13f1b"
     Author = "Traffic Profile Manager contributors"
     Description = "Narrow CLI controller API composed from private state, argument, and runtime components."

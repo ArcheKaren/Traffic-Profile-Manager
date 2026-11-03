@@ -13,6 +13,9 @@ $appRoot = if ($RootPath) {
 } else {
     Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 }
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) "modules\TrafficProfileManager.Console\TrafficProfileManager.Console.psd1") -ErrorAction Stop
+Set-TpmUiRoot $appRoot
+
 $targetPath = Join-Path $appRoot "config\diagnostic-targets.json"
 if (-not (Test-Path -LiteralPath $targetPath -PathType Leaf)) {
     throw "Diagnostic target catalog was not found: $targetPath"
@@ -37,13 +40,13 @@ foreach ($target in $targets) {
 }
 
 if ($Interactive -and -not $TargetId) {
-    Write-Host ""
-    Write-Host "Application diagnostics" -ForegroundColor Cyan
+    Write-TpmUi ""
+    Write-TpmUi "Application diagnostics" -ForegroundColor Cyan
     for ($index = 0; $index -lt $targets.Count; $index++) {
-        Write-Host "[$($index + 1)] $($targets[$index].displayName)"
+        Write-TpmUi "[$($index + 1)] $($targets[$index].displayName)"
     }
-    Write-Host "[0] Cancel"
-    $choice = Read-Host "Select a target"
+    Write-TpmUi "[0] Cancel"
+    $choice = Read-TpmUi "Select a target"
     $number = 0
     if (-not [int]::TryParse($choice, [ref]$number) -or $number -lt 0 -or $number -gt $targets.Count) {
         throw "Invalid diagnostic target selection."
@@ -74,7 +77,8 @@ function Test-TcpEndpoint([string]$Name, [int]$Port, [int]$TimeoutMs) {
     }
 }
 
-$versionPath = Join-Path $appRoot "VERSION"
+$versionPath = Join-Path $appRoot "metadata\VERSION"
+if (-not (Test-Path -LiteralPath $versionPath -PathType Leaf)) { $versionPath = Join-Path $appRoot "VERSION" }
 $version = if (Test-Path -LiteralPath $versionPath) {
     (Get-Content -Raw -LiteralPath $versionPath).Trim()
 } else { "unknown" }
@@ -245,7 +249,7 @@ $lines.Add("Observed host names in the recent local log: $($observedHosts.Count)
 foreach ($name in $observedHosts) { $lines.Add("- $name") }
 [IO.File]::WriteAllLines($textPath, $lines, $utf8)
 
-Write-Host ""
-Write-Host "Diagnostic reports created." -ForegroundColor Green
-Write-Host "Text: $textPath"
-Write-Host "JSON: $jsonPath"
+Write-TpmUi ""
+Write-TpmUi "Diagnostic reports created." -ForegroundColor Green
+Write-TpmUi "Text: $textPath"
+Write-TpmUi "JSON: $jsonPath"

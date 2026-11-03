@@ -10,6 +10,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+Import-Module (Join-Path $projectRoot (
+    "modules\TrafficProfileManager.Runtime\TrafficProfileManager.Runtime.psd1"
+)) -ErrorAction Stop
+Import-Module (Join-Path $projectRoot (
+    "modules\TrafficProfileManager.Core\TrafficProfileManager.Core.psd1"
+)) -ErrorAction Stop
 $releaseRoot = Join-Path $projectRoot "release"
 $runtimeSource = if ($RuntimeRoot) {
     [IO.Path]::GetFullPath($RuntimeRoot)
@@ -38,7 +44,7 @@ $archiveTemporary = Join-Path `
         [Guid]::NewGuid().ToString("N")
     ))
 $sourceManifestPath = Join-Path $projectRoot "runtime\SOURCE.json"
-$releaseManifestName = ".tpm-release-manifest.json"
+$releaseManifestName = "metadata/release-manifest.json"
 
 function Copy-ProjectFile([string]$RelativePath) {
     $source = Join-Path $projectRoot $RelativePath
@@ -73,49 +79,10 @@ function Find-FirstFile(
 }
 
 function Get-VerifiedRuntimeFile([string]$Key) {
-    if (-not (Test-Path -LiteralPath $sourceManifestPath -PathType Leaf)) {
-        throw "Runtime provenance manifest was not found: $sourceManifestPath"
-    }
-    $manifest = Get-Content -Raw -LiteralPath $sourceManifestPath |
-        ConvertFrom-Json
-    if (
-        [string]$manifest.source -notmatch "^https://" -or
-        [string]$manifest.archiveSha256 -notmatch "^[A-Fa-f0-9]{64}$"
-    ) {
-        throw "runtime\SOURCE.json contains invalid source metadata."
-    }
-    $entry = $manifest.runtimeFiles.$Key
-    if (-not $entry) {
-        throw "runtime\SOURCE.json has no '$Key' file entry."
-    }
-    $relativePath = [string]$entry.path
-    if ([IO.Path]::IsPathRooted($relativePath)) {
-        throw "Runtime provenance path must be relative: $relativePath"
-    }
-    $runtimeRoot = [IO.Path]::GetFullPath($runtimeSource).TrimEnd("\")
-    $candidate = [IO.Path]::GetFullPath(
-        (Join-Path $runtimeRoot $relativePath)
-    )
-    if (-not $candidate.StartsWith(
-        $runtimeRoot + "\",
-        [StringComparison]::OrdinalIgnoreCase
-    )) {
-        throw "Runtime provenance path leaves RuntimeRoot: $relativePath"
-    }
-    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-        throw "Verified runtime component was not found: $relativePath"
-    }
-    $file = Get-Item -LiteralPath $candidate
-    if ([int64]$entry.length -ne $file.Length) {
-        throw "Runtime component size mismatch: $relativePath"
-    }
-    $actualHash = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash
-    if ($actualHash -ine [string]$entry.sha256) {
-        throw "Runtime component SHA-256 mismatch: $relativePath"
-    }
-    return $candidate
+    $manifest = Get-TpmRuntimeManifest $sourceManifestPath
+    return Get-TpmVerifiedRuntimeFile -RuntimeRoot $runtimeSource `
+        -Entry $manifest.runtimeFiles.$Key -Layout Source
 }
-
 function Copy-RuntimeFile(
     [string]$SourcePath,
     [string]$RelativeDestination
@@ -261,6 +228,31 @@ function Write-ReleaseManifest {
     )
 }
 
+function Write-BuildInfo {
+    $build = Get-TpmBuildInfo -AppRoot $projectRoot
+    $contentLines = @(
+        Get-ChildItem -LiteralPath $staging -File -Recurse |
+            ForEach-Object {
+                $relative = $_.FullName.Substring($staging.Length + 1).Replace("\", "/")
+                $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+                "$hash  $relative"
+            } | Sort-Object
+    )
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $build.contentSha256 = [BitConverter]::ToString($sha.ComputeHash(
+            [Text.Encoding]::UTF8.GetBytes(($contentLines -join "`n") + "`n")
+        )).Replace("-", "")
+    } finally {
+        $sha.Dispose()
+    }
+    [IO.File]::WriteAllText(
+        (Join-Path $staging "metadata\BUILD-INFO.json"),
+        ($build | ConvertTo-Json) + [Environment]::NewLine,
+        [Text.UTF8Encoding]::new($false)
+    )
+}
+
 function Assert-NoReleaseReparsePoint(
     [string]$Path,
     [string]$Root
@@ -282,14 +274,19 @@ function Assert-NoReleaseReparsePoint(
 function Remove-StaleManagedFiles([string]$Directory) {
     $resolvedOutput = [IO.Path]::GetFullPath($Directory).TrimEnd("\")
     Assert-NoReleaseReparsePoint $resolvedOutput $resolvedOutput
-    $manifestPath = Join-Path $resolvedOutput $releaseManifestName
+    $previousManifestName = $releaseManifestName
+    $manifestPath = Join-Path $resolvedOutput $previousManifestName
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        $previousManifestName = ".tpm-release-manifest.json"
+        $manifestPath = Join-Path $resolvedOutput $previousManifestName
+    }
     $currentManifest = Get-Content -Raw -LiteralPath (
         Join-Path $staging $releaseManifestName
     ) | ConvertFrom-Json
     $current = New-Object "Collections.Generic.HashSet[string]" (
         [StringComparer]::OrdinalIgnoreCase
     )
-    foreach ($path in @($currentManifest.managedFiles)) {
+    foreach ($path in @($currentManifest.managedFiles) + @($releaseManifestName)) {
         [void]$current.Add(([string]$path).Replace("/", "\"))
     }
 
@@ -299,7 +296,7 @@ function Remove-StaleManagedFiles([string]$Directory) {
         if ([int]$previous.schemaVersion -ne 1) {
             throw "Unsupported release manifest in output directory."
         }
-        foreach ($relativePathValue in @($previous.managedFiles)) {
+        foreach ($relativePathValue in @($previous.managedFiles) + @($previousManifestName)) {
             $relativePath = ([string]$relativePathValue).Replace("/", "\")
             if ($current.Contains($relativePath)) { continue }
             $candidate = [IO.Path]::GetFullPath(
@@ -332,19 +329,19 @@ function Remove-StaleManagedFiles([string]$Directory) {
     }
 }
 
-$rootFiles = @(
-    "VERSION"
-    "LICENSE"
+$releaseFiles = @(
+    "metadata\VERSION"
+    "docs\LICENSE"
     "README.md"
-    "CHANGELOG.md"
-    "CONTRIBUTING.md"
-    "SECURITY.md"
-    "THIRD-PARTY-LICENSES.txt"
+    "docs\CHANGELOG.md"
+    "docs\CONTRIBUTING.md"
+    "docs\SECURITY.md"
+    "docs\THIRD-PARTY-LICENSES.txt"
     "Manager.bat"
-    "Test Profiles.bat"
-    "Validate Profiles.bat"
-    "manage-network-mappings.ps1"
-    "watch-foreground.ps1"
+    "tools\Test Profiles.bat"
+    "tools\Validate Profiles.bat"
+    "tools\manage-network-mappings.ps1"
+    "tools\watch-foreground.ps1"
     "zapretctl.cmd"
     "zapretctl.ps1"
     "1 - Base.bat"
@@ -363,6 +360,8 @@ $rootFiles = @(
     "14 - Base (Mixed aggressive).bat"
 )
 $releaseToolFiles = @(
+    'maintenance.ps1'
+    'console-manager.ps1'
     "application-diagnostics.ps1"
     "catalog-library.ps1"
     "domain-pack-manager.ps1"
@@ -389,7 +388,7 @@ $runtimeCreatedUserLists = @(
 try {
     New-Item -ItemType Directory -Path $staging -Force | Out-Null
 
-    foreach ($relativePath in $rootFiles) {
+    foreach ($relativePath in $releaseFiles) {
         Copy-ProjectFile $relativePath
     }
     foreach ($directory in @(
@@ -510,6 +509,7 @@ try {
     Copy-RuntimeFile $cygwin "runtime\cygwin1.dll"
     Copy-RuntimeFile $luaLib "runtime\lua\zapret-lib.lua"
     Copy-RuntimeFile $luaAntidpi "runtime\lua\zapret-antidpi.lua"
+    Write-BuildInfo
     Write-ReleaseManifest
 
     if (-not $SkipTests) {

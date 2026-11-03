@@ -16,6 +16,9 @@ Import-Module (
     Join-Path $projectRoot `
         "modules\TrafficProfileManager.Operations\TrafficProfileManager.Operations.psd1"
 ) -ErrorAction Stop
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) (
+    "modules\TrafficProfileManager.Runtime\TrafficProfileManager.Runtime.psd1"
+)) -ErrorAction Stop
 
 Write-TpmOperationLog `
     -AppRoot $projectRoot `
@@ -27,13 +30,13 @@ Write-TpmOperationLog `
 try {
 $archive = [IO.Path]::GetFullPath($ArchivePath)
 $manifestPath = Join-Path $projectRoot "runtime\SOURCE.json"
-$manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
-if (
-    [string]$manifest.bootstrapRelease.sha256 -notmatch "^[A-Fa-f0-9]{64}$" -or
-    (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ine
-        [string]$manifest.bootstrapRelease.sha256
-) {
-    throw "Runtime bootstrap archive SHA-256 mismatch."
+$manifest = Get-TpmRuntimeManifest $manifestPath
+$archiveStream = [IO.File]::OpenRead($archive)
+try {
+    Assert-TpmRuntimeContent -Stream $archiveStream `
+        -Sha256 $manifest.bootstrapRelease.sha256 -Label "bootstrap archive"
+} finally {
+    $archiveStream.Dispose()
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -46,15 +49,8 @@ try {
         $entryMetadata = $property.Value
         $releasePath = [string]$entryMetadata.releasePath
         $runtimePath = [string]$entryMetadata.path
-        if (
-            [string]::IsNullOrWhiteSpace($releasePath) -or
-            [IO.Path]::IsPathRooted($releasePath) -or
-            @($releasePath.Replace("\", "/").Split("/") | Where-Object {
-                $_ -in @("", ".", "..")
-            }).Count
-        ) {
-            throw "Unsafe runtime bootstrap release path: $releasePath"
-        }
+        [void](Resolve-TpmRuntimePath $runtimeRoot $releasePath)
+        $destination = Resolve-TpmRuntimePath $runtimeRoot $runtimePath
         $entryName = (
             "TrafficProfileManager/runtime/{0}" -f
             $releasePath.Replace("\", "/")
@@ -64,34 +60,13 @@ try {
         if (-not $entry -or $entry.Length -ne [int64]$entryMetadata.length) {
             throw "Runtime bootstrap entry is missing or has the wrong size: $entryName"
         }
-        $sha = [Security.Cryptography.SHA256]::Create()
         $input = $entry.Open()
         try {
-            $actualHash = [BitConverter]::ToString(
-                $sha.ComputeHash($input)
-            ).Replace("-", "")
+            Assert-TpmRuntimeContent -Stream $input `
+                -Sha256 $entryMetadata.sha256 -Length $entryMetadata.length `
+                -Label $entryName
         } finally {
             $input.Dispose()
-            $sha.Dispose()
-        }
-        if ($actualHash -ine [string]$entryMetadata.sha256) {
-            throw "Runtime bootstrap entry SHA-256 mismatch: $entryName"
-        }
-
-        if (
-            [string]::IsNullOrWhiteSpace($runtimePath) -or
-            [IO.Path]::IsPathRooted($runtimePath)
-        ) {
-            throw "Unsafe runtime destination path: $runtimePath"
-        }
-        $destination = [IO.Path]::GetFullPath(
-            (Join-Path $runtimeRoot $runtimePath)
-        )
-        if (-not $destination.StartsWith(
-            $runtimeRoot + "\",
-            [StringComparison]::OrdinalIgnoreCase
-        )) {
-            throw "Runtime destination leaves the runtime directory: $runtimePath"
         }
         New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force |
             Out-Null

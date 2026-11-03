@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0"
+cd /d "%~dp0.."
 title Traffic Profile Comparison
 
 if defined TRAFFIC_PROFILE_TEST_MODE goto elevated
@@ -12,7 +12,7 @@ if errorlevel 1 (
 )
 
 :elevated
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\profile-benchmark.ps1"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0profile-benchmark.ps1"
 set "test_error=%errorlevel%"
 echo.
 if not "%test_error%"=="0" echo Comparison finished with exit code %test_error%.

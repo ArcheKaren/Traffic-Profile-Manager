@@ -16,6 +16,9 @@ $appRoot = if ($RootPath) {
 } else {
     Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 }
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) "modules\TrafficProfileManager.Console\TrafficProfileManager.Console.psd1") -ErrorAction Stop
+Set-TpmUiRoot $appRoot
+
 . (Join-Path $PSScriptRoot "catalog-library.ps1")
 
 function Get-PackContext {
@@ -33,8 +36,8 @@ function Set-PackEnabled([string]$Id, [bool]$Enabled) {
     else { [void]$context.State.Enabled.Remove($Id) }
     Save-DomainPackState $appRoot $context.Catalog $context.State
     $result = Sync-DomainCatalog $appRoot
-    Write-Host "Domain pack '$Id': $(if ($Enabled) { 'enabled' } else { 'disabled' })." -ForegroundColor Green
-    Write-Host "Compiled domains: $($result.DomainCount). Restart the active profile to apply the change."
+    Write-TpmUi "Domain pack '$Id': $(if ($Enabled) { 'enabled' } else { 'disabled' })." -ForegroundColor Green
+    Write-TpmUi "Compiled domains: $($result.DomainCount). Restart the active profile to apply the change."
 }
 
 function New-UserDomainPack(
@@ -108,8 +111,8 @@ function New-UserDomainPack(
         }
         throw
     }
-    Write-Host "User domain pack created: $Id" -ForegroundColor Green
-    Write-Host "Edit: $(Join-Path $target 'domains.txt')"
+    Write-TpmUi "User domain pack created: $Id" -ForegroundColor Green
+    Write-TpmUi "Edit: $(Join-Path $target 'domains.txt')"
     return $target
 }
 
@@ -134,44 +137,44 @@ function Show-Packs([switch]$IncludeWarnings) {
 function Show-Manager {
     while ($true) {
         Clear-Host
-        Write-Host "=========================================================="
-        Write-Host "                       Domain Packs"
-        Write-Host "=========================================================="
-        Write-Host ""
+        Write-TpmUi "=========================================================="
+        Write-TpmUi "                       Domain Packs"
+        Write-TpmUi "=========================================================="
+        Write-TpmUi ""
         $packs = @(Show-Packs)
         $warnings = @(Get-DomainPackWarnings)
         foreach ($warning in $warnings) {
-            Write-Host "[INVALID] $warning" -ForegroundColor Red
+            Write-TpmUi "[INVALID] $warning" -ForegroundColor Red
         }
-        if ($warnings.Count) { Write-Host "" }
+        if ($warnings.Count) { Write-TpmUi "" }
         for ($index = 0; $index -lt $packs.Count; $index++) {
-            $marker = if ($packs[$index].Enabled) { "ON " } else { "OFF" }
-            $kind = if ($packs[$index].UserDefined) { "CUSTOM" } else { "BUILT-IN" }
-            Write-Host ("[{0}] [{1}] [{2}] {3}" -f @(
-                $index + 1,
+            $marker = if ($packs[$index].Enabled) { Get-TpmText "ON" } else { Get-TpmText "OFF" }
+            $kind = if ($packs[$index].UserDefined) { Get-TpmText "CUSTOM" } else { Get-TpmText "BUILT-IN" }
+            Write-TpmUi ("[{0}] [{1}] [{2}] {3}" -f @(
+                ($index + 1),
                 $marker,
                 $kind,
-                $packs[$index].DisplayName
+                (Get-TpmText $packs[$index].DisplayName)
             ))
-            Write-Host ("        {0}" -f $packs[$index].Id) -ForegroundColor DarkGray
+            Write-TpmUi ("        {0}" -f $packs[$index].Id) -ForegroundColor DarkGray
         }
-        Write-Host ""
-        Write-Host "Select a pack number to toggle it."
-        Write-Host "[C] Create a custom pack"
-        Write-Host "[O] Open the custom pack folder"
-        Write-Host "[R] Rebuild lists\domains.txt"
-        Write-Host "[0] Back"
-        Write-Host ""
-        $choice = (Read-Host "Select an option").Trim()
+        Write-TpmUi ""
+        Write-TpmUi "Select a pack number to toggle it."
+        Write-TpmUi "[C] Create a custom pack"
+        Write-TpmUi "[O] Open the custom pack folder"
+        Write-TpmUi "[R] Rebuild lists\domains.txt"
+        Write-TpmUi "[0] Back"
+        Write-TpmUi ""
+        $choice = (Read-TpmUi "Select an option").Trim()
         if ($choice -eq "0") { return }
         if ($choice -match "^[Cc]$") {
-            $id = (Read-Host "Pack ID (lowercase letters, digits, hyphens)").Trim()
-            $displayName = (Read-Host "Display name").Trim()
+            $id = (Read-TpmUi "Pack ID (lowercase letters, digits, hyphens)").Trim()
+            $displayName = (Read-TpmUi "Display name").Trim()
             $createdPath = New-UserDomainPack $id $displayName
             Start-Process notepad.exe -ArgumentList @(
                 '"{0}"' -f (Join-Path $createdPath "domains.txt")
             )
-            Read-Host "Press Enter to continue" | Out-Null
+            Read-TpmUi "Press Enter to continue" | Out-Null
             continue
         }
         if ($choice -match "^[Oo]$") {
@@ -182,15 +185,15 @@ function Show-Manager {
         }
         if ($choice -match "^[Rr]$") {
             $result = Sync-DomainCatalog $appRoot
-            Write-Host "Compiled domains: $($result.DomainCount)." -ForegroundColor Green
-            Read-Host "Press Enter to continue" | Out-Null
+            Write-TpmUi "Compiled domains: $($result.DomainCount)." -ForegroundColor Green
+            Read-TpmUi "Press Enter to continue" | Out-Null
             continue
         }
         $number = 0
         if ([int]::TryParse($choice, [ref]$number) -and $number -ge 1 -and $number -le $packs.Count) {
             $pack = $packs[$number - 1]
             Set-PackEnabled $pack.Id (-not $pack.Enabled)
-            Read-Host "Press Enter to continue" | Out-Null
+            Read-TpmUi "Press Enter to continue" | Out-Null
         }
     }
 }

@@ -41,12 +41,22 @@ Import-Module (
 ) -Force -ErrorAction Stop
 
 $requiredPaths = @(
-    "LICENSE"
+    'metadata\VERSION'
+    'docs\CHANGELOG.md'
+    'docs\CONTRIBUTING.md'
+    'docs\SECURITY.md'
+    'tools\Test Profiles.bat'
+    'tools\Validate Profiles.bat'
+    'tools\maintenance.ps1'
+    'tools\console-manager.ps1'
+    'modules\TrafficProfileManager.Console\TrafficProfileManager.Console.psd1'
+    'modules\TrafficProfileManager.Maintenance\TrafficProfileManager.Maintenance.psd1'
+    "docs\LICENSE"
     "README.md"
-    "THIRD-PARTY-LICENSES.txt"
+    "docs\THIRD-PARTY-LICENSES.txt"
     "Manager.bat"
     "zapretctl.ps1"
-    "manage-network-mappings.ps1"
+    "tools\manage-network-mappings.ps1"
     "runtime\SOURCE.json"
     "config\config.json"
     "config\diagnostic-targets.json"
@@ -74,6 +84,8 @@ $requiredPaths = @(
     "tools\application-diagnostics.ps1"
     "tools\service-control.ps1"
     "modules\TrafficProfileManager.Core\TrafficProfileManager.Core.psd1"
+    "modules\TrafficProfileManager.Core\BuildInfo.ps1"
+    "modules\TrafficProfileManager.Runtime\TrafficProfileManager.Runtime.psd1"
     "modules\TrafficProfileManager.Controller\TrafficProfileManager.Controller.psd1"
     "modules\TrafficProfileManager.Controller\Private\AppState.ps1"
     "modules\TrafficProfileManager.Controller\Private\WinwsArguments.ps1"
@@ -90,6 +102,8 @@ if ($sourceCheckout) {
         ".github\workflows\release.yml"
         ".github\workflows\validate.yml"
         "tests\integration\service-lifecycle.ps1"
+        "tests\integration\foreground-lifecycle.ps1"
+        "tools\test-runtime.ps1"
     )
 }
 $missingPaths = @(
@@ -101,6 +115,17 @@ if ($missingPaths.Count) {
 } else {
     Add-Success "Required project files"
 }
+
+$allowedRootFiles = @('Manager.bat','zapretctl.cmd','zapretctl.ps1','README.md')
+$portableCheckout = (Test-Path -LiteralPath (Get-ProjectPath 'metadata/release-manifest.json') -PathType Leaf) -or
+    (Test-Path -LiteralPath (Get-ProjectPath '.tpm-release-manifest.json') -PathType Leaf)
+# CI also audits a source copy without .git; development files still belong to it.
+if (-not $portableCheckout) { $allowedRootFiles += @('.editorconfig','.gitattributes','.gitignore') }
+$unexpectedRootFiles = @(Get-ChildItem -LiteralPath $projectRoot -File -Force |
+    Where-Object { $_.Name -notin $allowedRootFiles -and $_.Name -notmatch '^\d+ - .+\.bat$' })
+if ($unexpectedRootFiles.Count) {
+    Add-Failure ("Unexpected root files: " + ($unexpectedRootFiles.Name -join ', '))
+} else { Add-Success "Compact root: manager, CLI, README and profile launchers" }
 
 $workflowPinFailures = 0
 if ($sourceCheckout) {
@@ -197,6 +222,14 @@ $managerBatch = Get-Content -Raw -LiteralPath (Get-ProjectPath "Manager.bat")
 $profileRunner = Get-Content -Raw -LiteralPath (
     Get-ProjectPath "tools\run-profile.bat"
 )
+$foregroundRuntime = Get-Content -Raw -LiteralPath (
+    Get-ProjectPath (
+        "modules\TrafficProfileManager.Controller\Private\RuntimeProcess.ps1"
+    )
+)
+$foregroundWatcher = Get-Content -Raw -LiteralPath (
+    Get-ProjectPath "tools\watch-foreground.ps1"
+)
 $promptVariables = @(
     [regex]::Matches(
         $managerBatch,
@@ -221,6 +254,21 @@ if (
     )
 } else {
     Add-Success "Safe batch argument boundaries"
+}
+
+if (
+    $profileRunner -match 'manage-network-mappings\.ps1"\s+install' -or
+    $foregroundRuntime -notmatch '(?s)watcherInfo.*?-CreateNoWindow' -or
+    $foregroundRuntime -notmatch '\$watcherProcess\.WaitForExit\(5000\)' -or
+    $foregroundRuntime -notmatch 'manage-network-mappings\.ps1"\) cleanup' -or
+    $foregroundWatcher -notmatch 'function Remove-ForegroundMappings'
+) {
+    Add-Failure (
+        "Direct profile lifecycle must have one mapping owner and wait for " +
+        "the detached cleanup watcher."
+    )
+} else {
+    Add-Success "Direct profile process and mapping cleanup lifecycle"
 }
 
 $profileModule = Get-ProjectPath `
@@ -628,54 +676,11 @@ if (-not @($failures | Where-Object { $_ -match "endpoint" }).Count) {
 }
 
 if (-not $SkipRuntimeCheck) {
-    $runtimeFiles = [ordered]@{
-        "winws2" = "runtime\winws2.exe"
-        "winDivertDll" = "runtime\WinDivert.dll"
-        "winDivertDriver" = "runtime\WinDivert64.sys"
-        "cygwin" = "runtime\cygwin1.dll"
-        "luaLib" = "runtime\lua\zapret-lib.lua"
-        "luaAntidpi" = "runtime\lua\zapret-antidpi.lua"
-    }
-    $missingRuntime = @(
-        $runtimeFiles.Values |
-            Where-Object {
-                -not (Test-Path -LiteralPath (Get-ProjectPath $_) -PathType Leaf)
-            }
-    )
-    if ($missingRuntime.Count) {
-        foreach ($path in $missingRuntime) {
-            Add-Failure "Runtime component is missing: $path"
-        }
-    } else {
-        try {
-            $sourceManifest = Get-Content -Raw -LiteralPath (
-                Get-ProjectPath "runtime\SOURCE.json"
-            ) | ConvertFrom-Json
-            foreach ($item in $runtimeFiles.GetEnumerator()) {
-                $property = $sourceManifest.runtimeFiles.PSObject.Properties[
-                    [string]$item.Key
-                ]
-                $expected = if ($property) { $property.Value } else { $null }
-                if (
-                    -not $expected -or
-                    [string]$expected.sha256 -notmatch "^[A-Fa-f0-9]{64}$"
-                ) {
-                    throw "Missing provenance entry '$($item.Key)'."
-                }
-                $path = Get-ProjectPath ([string]$item.Value)
-                $file = Get-Item -LiteralPath $path
-                if (
-                    $file.Length -ne [int64]$expected.length -or
-                    (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ine
-                        [string]$expected.sha256
-                ) {
-                    throw "Runtime provenance mismatch: $($item.Value)"
-                }
-            }
-            Add-Success "Portable runtime components and provenance"
-        } catch {
-            Add-Failure "Runtime provenance validation failed: $($_.Exception.Message)"
-        }
+    try {
+        & (Join-Path $PSScriptRoot "test-runtime.ps1") -AppRoot $projectRoot
+        Add-Success "Runtime components and provenance"
+    } catch {
+        Add-Failure "Runtime provenance validation failed: $($_.Exception.Message)"
     }
 }
 

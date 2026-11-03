@@ -20,9 +20,23 @@ param(
 )
 
 $ErrorActionPreference = "SilentlyContinue"
-$appRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$appRoot = Split-Path -Parent $PSScriptRoot
 $started = [DateTime]::UtcNow
 $nextRefresh = [DateTime]::UtcNow
+
+function Remove-ForegroundMappings {
+    $lastError = $null
+    for ($attempt = 0; $attempt -lt 5; $attempt++) {
+        try {
+            & (Join-Path $appRoot "tools\manage-network-mappings.ps1") cleanup
+            return
+        } catch {
+            $lastError = $_
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    if ($lastError) { Write-Error $lastError }
+}
 
 function Get-MatchingProcess(
     [int]$ProcessId,
@@ -59,7 +73,7 @@ while (
         $mappingReady -and
         [DateTime]::UtcNow -ge $nextRefresh
     ) {
-        & (Join-Path $appRoot "manage-network-mappings.ps1") refresh *> $null
+        & (Join-Path $appRoot "tools\manage-network-mappings.ps1") refresh *> $null
         $elapsed = ([DateTime]::UtcNow - $started).TotalSeconds
         $nextRefresh = [DateTime]::UtcNow.AddSeconds(
             $(if ($elapsed -lt 30) { 3 } else { 30 })
@@ -73,10 +87,17 @@ if (
     (Get-MatchingProcess $WinwsPid $WinwsStartTicks $WinwsPath)
 ) {
     Stop-Process -Id $WinwsPid -Force -ErrorAction SilentlyContinue
+    $winwsProcess = Get-MatchingProcess `
+        $WinwsPid `
+        $WinwsStartTicks `
+        $WinwsPath
+    if ($winwsProcess) {
+        [void]$winwsProcess.WaitForExit(5000)
+    }
 }
 
 if ($CleanupMappings) {
-    & (Join-Path $appRoot "manage-network-mappings.ps1") cleanup
+    Remove-ForegroundMappings
 }
 $windowsPidPath = Join-Path $appRoot "state\winws2.windows.pid"
 if (Test-Path -LiteralPath $windowsPidPath -PathType Leaf) {

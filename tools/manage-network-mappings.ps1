@@ -14,7 +14,7 @@ $ErrorActionPreference = "Stop"
 $appRoot = if ($AppRoot) {
     [IO.Path]::GetFullPath($AppRoot)
 } else {
-    $PSScriptRoot
+    Split-Path -Parent $PSScriptRoot
 }
 $hostsPath = if ($HostsPath) {
     [IO.Path]::GetFullPath($HostsPath)
@@ -25,8 +25,8 @@ $beginMarker = "# TrafficProfileManager Mapping BEGIN"
 $endMarker = "# TrafficProfileManager Mapping END"
 $hostsMutexName = "Global\TrafficProfileManagerHostsLock"
 
-. (Join-Path $PSScriptRoot "tools\game-filter-library.ps1")
-. (Join-Path $PSScriptRoot "tools\network-mapping-library.ps1")
+. (Join-Path $PSScriptRoot "game-filter-library.ps1")
+. (Join-Path $PSScriptRoot "network-mapping-library.ps1")
 
 function Get-ByteHash([byte[]]$Bytes) {
     $sha = [Security.Cryptography.SHA256]::Create()
@@ -213,40 +213,64 @@ function Invoke-WithHostsLock([scriptblock]$Operation) {
     }
 }
 
+function Get-ManagedBlockRanges([string[]]$Lines) {
+    $ranges = New-Object "Collections.Generic.List[object]"
+    $openIndex = -1
+    for ($index = 0; $index -lt $Lines.Count; $index++) {
+        if ($Lines[$index] -eq $beginMarker) {
+            if ($openIndex -ge 0) {
+                throw (
+                    "The managed mapping block in hosts is incomplete or " +
+                    "nested. It was not modified."
+                )
+            }
+            $openIndex = $index
+            continue
+        }
+        if ($Lines[$index] -ne $endMarker) { continue }
+        if ($openIndex -lt 0) {
+            throw (
+                "The managed mapping block in hosts has an unmatched end " +
+                "marker. It was not modified."
+            )
+        }
+        $ranges.Add([pscustomobject]@{
+            Start = $openIndex
+            End = $index
+        })
+        $openIndex = -1
+    }
+    if ($openIndex -ge 0) {
+        throw (
+            "The managed mapping block in hosts has no end marker. " +
+            "It was not modified."
+        )
+    }
+    return $ranges.ToArray()
+}
+
 function Update-ManagedBlock($Mappings) {
     Invoke-WithHostsLock {
         $document = Read-HostsDocument
         $lines = @($document.Lines)
-        $beginIndexes = @(
-            for ($index = 0; $index -lt $lines.Count; $index++) {
-                if ($lines[$index] -eq $beginMarker) { $index }
-            }
-        )
-        $endIndexes = @(
-            for ($index = 0; $index -lt $lines.Count; $index++) {
-                if ($lines[$index] -eq $endMarker) { $index }
-            }
-        )
-
-        if ($beginIndexes.Count -eq 0 -and $endIndexes.Count -eq 0) {
-            $result = New-Object "Collections.Generic.List[string]"
-            foreach ($line in $lines) { $result.Add($line) }
-        } else {
-            if (
-                $beginIndexes.Count -ne 1 -or
-                $endIndexes.Count -ne 1 -or
-                $endIndexes[0] -le $beginIndexes[0]
+        $ranges = @(Get-ManagedBlockRanges $lines)
+        $result = New-Object "Collections.Generic.List[string]"
+        $rangeIndex = 0
+        for ($index = 0; $index -lt $lines.Count; $index++) {
+            while (
+                $rangeIndex -lt $ranges.Count -and
+                $index -gt [int]$ranges[$rangeIndex].End
             ) {
-                throw "The managed mapping block in hosts is incomplete or duplicated. It was not modified."
+                $rangeIndex++
             }
-            $begin = $beginIndexes[0]
-            $end = $endIndexes[0]
-            $result = New-Object "Collections.Generic.List[string]"
-            for ($index = 0; $index -lt $lines.Count; $index++) {
-                if ($index -lt $begin -or $index -gt $end) {
-                    $result.Add($lines[$index])
-                }
+            if (
+                $rangeIndex -lt $ranges.Count -and
+                $index -ge [int]$ranges[$rangeIndex].Start -and
+                $index -le [int]$ranges[$rangeIndex].End
+            ) {
+                continue
             }
+            $result.Add($lines[$index])
         }
 
         if ($null -ne $Mappings) {
@@ -261,8 +285,7 @@ function Update-ManagedBlock($Mappings) {
         }
         $changed = (
             $null -ne $Mappings -or
-            $beginIndexes.Count -ne 0 -or
-            $endIndexes.Count -ne 0
+            $ranges.Count -ne 0
         )
         if ($changed) {
             Write-HostsDocumentAtomic `
