@@ -3,6 +3,7 @@ param()
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+. (Join-Path $projectRoot 'tests/fixtures/acl-signature.ps1')
 $testRoot = Join-Path $projectRoot ("tests\.tmp-foreground-" + [Guid]::NewGuid().ToString("N"))
 $resolvedTest = [IO.Path]::GetFullPath($testRoot)
 $allowedRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot "tests")).TrimEnd("\") + "\"
@@ -87,7 +88,7 @@ $process = Get-Process -Id $PID
         } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $fixture "config\network-mappings\fixture.json")
         $hostsPath = Join-Path $fixture "hosts"
         Set-Content -LiteralPath $hostsPath "203.0.113.10 unrelated.example"
-        $originalAcl = (Get-Acl -LiteralPath $hostsPath).Sddl
+        $originalAcl = Get-TpmTestAclSignature $hostsPath
 
         $unrelatedInfo = New-TpmProcessStartInfo -FilePath $shell -CreateNoWindow `
             -ArgumentList @("-NoProfile", "-Command", "Start-Sleep -Seconds 300")
@@ -146,7 +147,7 @@ $process = Get-Process -Id $PID
         if (-not ([IO.File]::ReadAllText($hostsPath).Contains("203.0.113.10 unrelated.example"))) {
             throw "Unrelated hosts entry was changed in $scenario."
         }
-        if ((Get-Acl -LiteralPath $hostsPath).Sddl -ne $originalAcl) {
+        if ((Get-TpmTestAclSignature $hostsPath) -ne $originalAcl) {
             throw "Hosts ACL was changed in $scenario."
         }
         if (-not (Get-TestProcess $unrelated)) { throw "Unrelated process was stopped in $scenario." }

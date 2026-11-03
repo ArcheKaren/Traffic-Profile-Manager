@@ -22,7 +22,13 @@ Describe 'Console manager language selection' {
             $info=New-TpmProcessStartInfo -FilePath (Get-Command powershell.exe).Source -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $Root 'tools\console-manager.ps1')) -CreateNoWindow -RedirectStandardOutput -RedirectStandardError
             $info.RedirectStandardInput=$true
             $info.StandardOutputEncoding=[Text.Encoding]::UTF8
-            $process=[Diagnostics.Process]::Start($info)
+            # .NET Framework uses Console.InputEncoding for its redirected stdin writer.
+            # UTF-8 with a BOM would prepend invisible bytes to the first menu answer.
+            $inputEncoding=[Console]::InputEncoding
+            try {
+                if($inputEncoding.CodePage -eq 65001){[Console]::InputEncoding=[Text.UTF8Encoding]::new($false)}
+                $process=[Diagnostics.Process]::Start($info)
+            } finally { [Console]::InputEncoding=$inputEncoding }
             try {
                 $output=$process.StandardOutput.ReadToEndAsync()
                 $errorOutput=$process.StandardError.ReadToEndAsync()

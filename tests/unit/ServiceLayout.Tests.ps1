@@ -1,6 +1,7 @@
 Describe 'Service deployment with compact product paths' {
     BeforeAll {
         $projectRoot=Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+        . (Join-Path $projectRoot 'tests/fixtures/acl-signature.ps1')
         Import-Module (Join-Path $projectRoot 'modules/TrafficProfileManager.Core/TrafficProfileManager.Core.psd1') -Force
         $tokens=$null;$errors=$null
         $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $projectRoot 'tools/service-control.ps1'),[ref]$tokens,[ref]$errors)
@@ -38,11 +39,20 @@ Describe 'Service deployment with compact product paths' {
         $hosts=Join-Path $serviceRoot 'fixture-hosts'
         $text=@('203.0.113.10 unrelated.example','# TrafficProfileManager Mapping BEGIN','198.51.100.42 managed.example','# TrafficProfileManager Mapping END') -join [Environment]::NewLine
         [IO.File]::WriteAllText($hosts,$text)
-        $acl=(Get-Acl -LiteralPath $hosts).Sddl
+        $acl=Get-TpmTestAclSignature $hosts
         & (Join-Path $serviceRoot 'tools/manage-network-mappings.ps1') cleanup -AppRoot $serviceRoot -HostsPath $hosts
         [IO.File]::ReadAllText($hosts)|Should -Match 'unrelated.example'
         [IO.File]::ReadAllText($hosts)|Should -Not -Match 'Mapping BEGIN|managed.example'
-        (Get-Acl -LiteralPath $hosts).Sddl|Should -Be $acl
+        (Get-TpmTestAclSignature $hosts)|Should -Be $acl
+    }
+    It 'detects a real change to ACL inheritance protection' {
+        $path=Join-Path $TestDrive 'acl-protection-fixture'
+        [IO.File]::WriteAllText($path,'fixture')
+        $original=Get-TpmTestAclSignature $path
+        $acl=Get-Acl -LiteralPath $path
+        $acl.SetAccessRuleProtection($true,$true)
+        Set-Acl -LiteralPath $path -AclObject $acl
+        (Get-TpmTestAclSignature $path)|Should -Not -Be $original
     }
     It 'uses the legacy mapping tool when controlling an older service snapshot' {
         New-Item -ItemType Directory -Path $serviceRoot|Out-Null
