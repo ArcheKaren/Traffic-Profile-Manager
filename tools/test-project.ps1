@@ -56,6 +56,8 @@ $requiredPaths = @(
     "docs\README.en.md"
     "docs\VERIFY.md"
     "docs\media\manager-demo.gif"
+    "docs\media\download-ru.svg"
+    "docs\media\download-en.svg"
     "docs\media\README.md"
     "docs\media\profile-comparison-20260728-125142.csv"
     "docs\THIRD-PARTY-LICENSES.txt"

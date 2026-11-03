@@ -6,16 +6,19 @@
 
 <p>
   <img alt="Платформа: Windows 10 и 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square">
-  <a href="https://github.com/ArcheKaren/Traffic-Profile-Manager/releases/latest"><img alt="Последний релиз" src="https://img.shields.io/github/v/release/ArcheKaren/Traffic-Profile-Manager?label=версия&amp;style=flat-square"></a>
+  <a href="https://github.com/ArcheKaren/Traffic-Profile-Manager/releases/latest"><img alt="Последний релиз" src="https://img.shields.io/github/v/release/ArcheKaren/Traffic-Profile-Manager.svg?style=flat-square&amp;label=%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8F"></a>
   <a href="https://github.com/ArcheKaren/Traffic-Profile-Manager/actions/workflows/validate.yml"><img alt="Проверки проекта" src="https://github.com/ArcheKaren/Traffic-Profile-Manager/actions/workflows/validate.yml/badge.svg?branch=main"></a>
   <img alt="PowerShell 5.1 и новее" src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?style=flat-square">
-  <img alt="Архитектура: x64" src="https://img.shields.io/badge/архитектура-x64-555555?style=flat-square">
-  <img alt="Переносимая сборка" src="https://img.shields.io/badge/сборка-переносимая-2E8B57?style=flat-square">
-  <img alt="Лицензия: MIT" src="https://img.shields.io/badge/лицензия-MIT-F0C040?style=flat-square">
+  <img alt="Архитектура: x64" src="https://img.shields.io/badge/%D0%B0%D1%80%D1%85%D0%B8%D1%82%D0%B5%D0%BA%D1%82%D1%83%D1%80%D0%B0-x64-555555?style=flat-square">
+  <img alt="Переносимая сборка" src="https://img.shields.io/badge/%D1%81%D0%B1%D0%BE%D1%80%D0%BA%D0%B0-%D0%BF%D0%B5%D1%80%D0%B5%D0%BD%D0%BE%D1%81%D0%B8%D0%BC%D0%B0%D1%8F-2E8B57?style=flat-square">
+  <img alt="Лицензия: MIT" src="https://img.shields.io/badge/%D0%BB%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F-MIT-F0C040?style=flat-square">
 </p>
 
 <p>
-  <a href="https://github.com/ArcheKaren/Traffic-Profile-Manager/releases/latest/download/TrafficProfileManager.zip"><strong>⬇ Скачать для Windows</strong></a> ·
+  <a href="https://github.com/ArcheKaren/Traffic-Profile-Manager/releases/latest/download/TrafficProfileManager.zip"><img alt="Скачать для Windows — ZIP" src="docs/media/download-ru.svg" width="260" height="44"></a>
+</p>
+
+<p>
   <a href="https://github.com/ArcheKaren/Traffic-Profile-Manager/releases/latest">Что нового</a> ·
   <a href="docs/VERIFY.md">Проверить сборку</a>
 </p>

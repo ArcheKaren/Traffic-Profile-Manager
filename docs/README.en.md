@@ -6,14 +6,17 @@
 
 <p>
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square">
-  <a href="https://github.com/ArcheKaren/Traffic-Profile-Manager/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/ArcheKaren/Traffic-Profile-Manager?style=flat-square"></a>
+  <a href="https://github.com/ArcheKaren/Traffic-Profile-Manager/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/ArcheKaren/Traffic-Profile-Manager.svg?style=flat-square&amp;label=release"></a>
   <a href="https://github.com/ArcheKaren/Traffic-Profile-Manager/actions/workflows/validate.yml"><img alt="Project checks" src="https://github.com/ArcheKaren/Traffic-Profile-Manager/actions/workflows/validate.yml/badge.svg?branch=main"></a>
   <img alt="PowerShell 5.1 or newer" src="https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?style=flat-square">
   <a href="LICENSE"><img alt="MIT license for project code" src="https://img.shields.io/badge/license-MIT-F0C040?style=flat-square"></a>
 </p>
 
 <p>
-  <a href="https://github.com/ArcheKaren/Traffic-Profile-Manager/releases/latest/download/TrafficProfileManager.zip"><strong>⬇ Download for Windows</strong></a> ·
+  <a href="https://github.com/ArcheKaren/Traffic-Profile-Manager/releases/latest/download/TrafficProfileManager.zip"><img alt="Download for Windows — ZIP" src="media/download-en.svg" width="260" height="44"></a>
+</p>
+
+<p>
   <a href="https://github.com/ArcheKaren/Traffic-Profile-Manager/releases/latest">Release notes</a> ·
   <a href="#verify">Verify your download</a>
 </p>

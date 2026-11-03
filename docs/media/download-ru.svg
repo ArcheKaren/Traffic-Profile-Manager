@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="260" height="44" viewBox="0 0 260 44" role="img" aria-labelledby="title">
+  <title id="title">Скачать для Windows — ZIP</title>
+  <rect x="0.5" y="0.5" width="259" height="43" rx="6" fill="#238636" stroke="#2ea043"/>
+  <path d="M26 10v16m-6-6 6 6 6-6M17 29v5h18v-5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="51" y="27" fill="#fff" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="600">Скачать для Windows</text>
+</svg>
