@@ -72,9 +72,23 @@ jobs:
           Import-Module Pester -RequiredVersion 5.7.1 -Force
           $configuration = New-PesterConfiguration
           $configuration.Run.Path = ".\tests\unit"
-          $configuration.Run.Exit = $true
+          $configuration.Run.Exit = $false
+          $configuration.Run.PassThru = $true
           $configuration.Output.Verbosity = "Detailed"
-          Invoke-Pester -Configuration $configuration
+          $results = Invoke-Pester -Configuration $configuration
+          if ($results.FailedCount -or $results.FailedContainersCount) {
+            foreach ($failed in @($results.Tests | Where-Object Result -eq "Failed")) {
+              foreach ($record in $failed.ErrorRecord) {
+                $kind = $record.Exception.GetType().Name
+                if ($kind -notmatch '^[A-Za-z0-9_]+$') { $kind = "Error" }
+                $location = [regex]::Match($record.ScriptStackTrace, 'tests[\\/]unit[\\/](?<file>[A-Za-z0-9.]+\.ps1):[^\d\r\n]*(?<line>\d+)')
+                $source = if ($location.Success) { "tests/unit/" + $location.Groups["file"].Value + ":" + $location.Groups["line"].Value } else { "test discovery" }
+                # Publish only a type and public source location, never error text or environment paths.
+                Write-Host ("::error title=Pester::" + $kind + " at " + $source)
+              }
+            }
+            exit 1
+          }
           '@
           $encodedCommand = [Convert]::ToBase64String(
             [Text.Encoding]::Unicode.GetBytes($script)
