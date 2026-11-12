@@ -17,3 +17,11 @@ cloudflarestorage.com
 cloudflarestream.com
 cloudflaretest.com
 cloudfront.net
+^dns.google
+^dns.quad9.net
+^dns.nextdns.io
+^doh.opendns.com
+^doh.cleanbrowsing.org
+^freedns.controld.com
+^wikimedia-dns.org
+^cloudflare-dns.com

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": "2026.08.03.1",
+  "revision": "2026.11.12.1",
   "generatedFile": "lists\\domains.txt",
   "sources": [
     {
@@ -9,8 +9,20 @@
     },
     {
       "id": "domain-list-community",
-      "url": "https://github.com/v2fly/domain-list-community",
-      "description": "Secondary ownership and coverage reference."
+      "url": "https://github.com/v2fly/domain-list-community/tree/2b7ae3222f79e58e323a6b1c30c6618821068963",
+      "description": "Secondary ownership and coverage reference.",
+      "commit": "2b7ae3222f79e58e323a6b1c30c6618821068963"
+    },
+    {
+      "id": "flowseal-ru-lists",
+      "url": "https://github.com/Flowseal/zapret-discord-youtube/blob/2401b7a13837139b0265632464ba563dddbf80d8/lists/list-general.txt",
+      "commit": "2401b7a13837139b0265632464ba563dddbf80d8",
+      "description": "DPI target-list reference, reviewed on 2026-11-12."
+    },
+    {
+      "id": "signal-network-docs",
+      "url": "https://support.signal.org/hc/en-us/articles/360007320291-Firewall-and-Internet-settings",
+      "description": "Owner documentation for Signal link and sharing domains, checked on 2026-11-12."
     }
   ],
   "packs": [
@@ -28,7 +40,7 @@
       "description": "Cloud delivery and encrypted client hello services.",
       "path": "lists\\packs\\cloud-delivery.txt",
       "enabledByDefault": true,
-      "sourceIds": ["project-curated"]
+      "sourceIds": ["project-curated", "flowseal-ru-lists"]
     },
     {
       "id": "streaming-media",
@@ -36,7 +48,7 @@
       "description": "Streaming extensions, audio and media delivery.",
       "path": "lists\\packs\\streaming-media.txt",
       "enabledByDefault": true,
-      "sourceIds": ["project-curated"]
+      "sourceIds": ["project-curated", "domain-list-community"]
     },
     {
       "id": "discord",
@@ -44,7 +56,7 @@
       "description": "Discord application, media and delivery endpoints.",
       "path": "lists\\packs\\discord.txt",
       "enabledByDefault": true,
-      "sourceIds": ["project-curated"]
+      "sourceIds": ["project-curated", "flowseal-ru-lists", "domain-list-community"]
     },
     {
       "id": "meta-quest",
@@ -68,7 +80,7 @@
       "description": "Messaging, social, community and archive platforms.",
       "path": "lists\\packs\\social-communication.txt",
       "enabledByDefault": true,
-      "sourceIds": ["project-curated"]
+      "sourceIds": ["project-curated", "domain-list-community", "signal-network-docs"]
     },
     {
       "id": "publishing",
@@ -92,7 +104,8 @@
       "description": "General web applications and content services.",
       "path": "lists\\packs\\general-web.txt",
       "enabledByDefault": true,
-      "sourceIds": ["project-curated"]
+      "sourceIds": ["project-curated", "domain-list-community"]
     }
-  ]
+  ],
+  "reviewedAt": "2026-11-12"
 }

@@ -155,7 +155,7 @@ function Show-ListMenu([bool]$Exclude) {
     Start-Process -FilePath notepad.exe -ArgumentList @('"' + (Join-Path $appRoot "lists\$file") + '"')
 }
 
-$items = @('Run a profile in a visible window','Install a profile as an automatic service','Remove the automatic service','Show status','Edit custom target lists','Edit custom exclusion lists','Test and compare profiles','Validate profile files','Background component controls','Edit a traffic profile','Create a custom profile','Open the profile folder','Game filters','Domain packs','Application diagnostics','Language','Backup and restore','Update and rollback','Saved comparison results')
+$items = @('Run a profile in a visible window','Install a profile as an automatic service','Remove the automatic service','Show status','Edit custom target lists','Edit custom exclusion lists','Test and compare profiles','Validate profile files','Background component controls','Edit a traffic profile','Create a custom profile','Open the profile folder','Game filters','Domain packs','Application diagnostics','Language','Backup and restore','Update and rollback','Saved comparison results','Named setups and application')
 :manager while ($true) {
     $script:CurrentTitle = 'Traffic Profile Manager'
     Show-TpmHeader -Compact -Subtitle (Get-TpmText ('Language: ' + (Get-TpmLanguage $appRoot))) -Clear
@@ -173,14 +173,14 @@ $items = @('Run a profile in a visible window','Install a profile as an automati
             '1' { Invoke-ManagerTool 'profile-manager.ps1' @('run') }
             '2' { Invoke-ManagerTool 'profile-manager.ps1' @('install') }
             '3' { Invoke-ManagerTool 'service-control.ps1' @('remove') }
-            '4' { Invoke-ManagerTool 'maintenance.ps1' @('overview'); Invoke-ManagerTool 'service-control.ps1' @('status') }
+            '4' { Invoke-ManagerTool 'maintenance.ps1' @('overview'); Invoke-ManagerTool 'service-control.ps1' @('status'); & (Join-Path $appRoot 'tools/workflows.ps1') -Command configuration }
             '5' { Show-ListMenu $false }
             '6' { Show-ListMenu $true }
             '7' { Invoke-ManagerTool 'profile-benchmark.ps1' }
             '8' { & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $appRoot 'tools\validate-profiles.ps1') }
             '9' { Show-BackgroundMenu }
             '10' { Invoke-ManagerTool 'profile-manager.ps1' @('edit') }
-            '11' { Invoke-ManagerTool 'profile-manager.ps1' @('create') }
+            '11' { Show-Options @('Build a profile step by step','Copy a profile and edit JSON'); $createChoice=Read-MenuChoice 'Select an option'; if($createChoice -eq '1'){& (Join-Path $appRoot 'tools/workflows.ps1') -Command build-profile -Interactive} elseif($createChoice -eq '2'){Invoke-ManagerTool 'profile-manager.ps1' @('create')} else{$script:SkipPause=$true} }
             '12' { Start-Process -FilePath explorer.exe -ArgumentList @('"' + (Join-Path $appRoot 'config\profiles') + '"') }
             '13' { Invoke-ManagerTool 'game-filter-manager.ps1' @('manage'); $script:SkipPause = $true }
             '14' { Invoke-ManagerTool 'domain-pack-manager.ps1' @('manage'); $script:SkipPause = $true }
@@ -197,6 +197,7 @@ $items = @('Run a profile in a visible window','Install a profile as an automati
             '17' { Show-BackupMenu }
             '18' { if (Show-UpdateMenu) { break manager } }
             '19' { Show-ResultsMenu }
+            '20' { & (Join-Path $appRoot 'tools/workflows.ps1') -Command setup -Interactive; $script:SkipPause=$true }
         }
     } catch { Write-TpmUi (Get-TpmText $_.Exception.Message) -ForegroundColor Red }
     if (-not $script:SkipPause) { [void](Read-TpmUi 'Press Enter to continue') }

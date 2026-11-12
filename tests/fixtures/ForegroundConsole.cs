@@ -28,10 +28,17 @@ public static class TpmForegroundConsole
     [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool AttachConsole(int pid);
     [DllImport("kernel32.dll")] private static extern bool FreeConsole();
-    [DllImport("kernel32.dll")] private static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GenerateConsoleCtrlEvent(int signal, int group);
     [DllImport("kernel32.dll")] private static extern IntPtr GetConsoleWindow();
     [DllImport("user32.dll", SetLastError = true)] private static extern bool PostMessage(IntPtr window, uint message, IntPtr w, IntPtr l);
+
+    public static void EnableCtrlC()
+    {
+        // Test runners may pass down the inheritable CTRL+C-ignore attribute.
+        if (!SetConsoleCtrlHandler(IntPtr.Zero, false))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
 
     public static int Start(string command, string directory)
     {

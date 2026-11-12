@@ -135,6 +135,13 @@ try {
         -ErrorAction SilentlyContinue)) `
         "The startup refresh task was not created."
 
+    & $serviceTool apply $profile
+    Assert-Condition ((Get-Service $serviceName).Status -eq 'Running') 'Applying configuration stopped the running service.'
+    Assert-Condition ([bool](Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) 'Applying configuration removed the startup task.'
+    Assert-Condition (Test-Path -LiteralPath (Join-Path $serviceRoot 'state/applied-service.json')) 'Applying configuration did not record a snapshot.'
+    $command=(Get-CimInstance Win32_Service -Filter "Name='TrafficProfileService'").PathName
+    Assert-Condition ($command -match 'winws2\.exe') 'Applying configuration produced an invalid SCM command.'
+
     & $serviceTool task-off
     Assert-Condition (-not (Get-ScheduledTask `
         -TaskName $taskName `

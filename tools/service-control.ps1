@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory = $true, Position = 0)]
     [ValidateSet(
         "install",
+        "apply",
         "remove",
         "status",
         "start",
@@ -46,6 +47,7 @@ Import-Module (
     Join-Path $appRoot `
         "modules\TrafficProfileManager.Controller\TrafficProfileManager.Controller.psd1"
 ) -ErrorAction Stop
+Import-Module (Join-Path $appRoot 'modules/TrafficProfileManager.Maintenance/TrafficProfileManager.Maintenance.psd1') -ErrorAction Stop
 . (Join-Path $appRoot "tools\game-filter-library.ps1")
 
 if ($Action -ne "status" -and -not (Test-TpmIsAdministrator)) {
@@ -238,39 +240,9 @@ function Assert-ServiceDeploymentOwnership {
     }
 }
 
-function Get-WinDivertDriverPath {
-    $registryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\WinDivert"
-    if (-not (Test-Path -LiteralPath $registryPath)) { return $null }
-    $imagePath = [string](
-        Get-ItemPropertyValue -LiteralPath $registryPath -Name ImagePath
-    )
-    $expanded = [Environment]::ExpandEnvironmentVariables(
-        $imagePath.Trim().Trim('"')
-    )
-    if ($expanded.StartsWith("\??\")) {
-        $expanded = $expanded.Substring(4)
-    } elseif ($expanded.StartsWith("\SystemRoot\", [StringComparison]::OrdinalIgnoreCase)) {
-        $expanded = Join-Path $env:SystemRoot $expanded.Substring(12)
-    }
-    if (-not [IO.Path]::IsPathRooted($expanded)) { return $null }
-    return [IO.Path]::GetFullPath($expanded)
-}
-
 function Remove-ManagedWinDivertDriver {
-    $driverPath = Get-WinDivertDriverPath
-    if (-not $driverPath) { return }
-    $expectedPath = [IO.Path]::GetFullPath(
-        (Join-Path $serviceRoot "runtime\WinDivert64.sys")
-    )
-    if (-not $driverPath.Equals(
-        $expectedPath,
-        [StringComparison]::OrdinalIgnoreCase
-    )) {
-        throw (
-            "The loaded WinDivert driver is not owned by this protected " +
-            "deployment. It was not modified: $driverPath"
-        )
-    }
+    $registryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\WinDivert"
+    if (-not (Test-Path -LiteralPath $registryPath)) { return }
 
     & sc.exe stop WinDivert | Out-Null
     $stopExitCode = $LASTEXITCODE
@@ -278,18 +250,22 @@ function Remove-ManagedWinDivertDriver {
     $deleteExitCode = $LASTEXITCODE
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
     while (
-        (Test-Path -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\WinDivert") -and
+        (Test-Path -LiteralPath $registryPath) -and
         [DateTime]::UtcNow -lt $deadline
     ) {
         Start-Sleep -Milliseconds 250
     }
-    $driverStillRegistered = Test-Path -LiteralPath (
-        "HKLM:\SYSTEM\CurrentControlSet\Services\WinDivert"
-    )
-    if ($deleteExitCode -ne 0 -and $driverStillRegistered) {
+    $driverStillRegistered = Test-Path -LiteralPath $registryPath
+    if ($driverStillRegistered) {
+        if ($deleteExitCode -ne 0) {
+            throw (
+                "WinDivert driver removal failed with sc.exe exit code " +
+                "$deleteExitCode (stop exit code $stopExitCode)."
+            )
+        }
         throw (
-            "WinDivert driver removal failed with sc.exe exit code " +
-            "$deleteExitCode (stop exit code $stopExitCode)."
+            "WinDivert is still registered or in use. " +
+            "Stop applications that use it and retry."
         )
     }
     $global:LASTEXITCODE = 0
@@ -431,6 +407,10 @@ function Sync-ServiceMutableData {
     )) {
         Copy-ServiceTree $directory
     }
+    $packState=Join-Path $appRoot 'state/domain-packs.json'
+    $protectedPackState=Join-Path $serviceRoot 'state/domain-packs.json'
+    if(Test-Path -LiteralPath $packState -PathType Leaf){Copy-ServiceFile $packState 'state/domain-packs.json'}
+    elseif(Test-Path -LiteralPath $protectedPackState){Remove-Item -LiteralPath $protectedPackState -Force}
     $enabledState = Join-Path $appRoot "state\enabled-game-filters.txt"
     $protectedState = Join-Path $serviceRoot "state\enabled-game-filters.txt"
     if (Test-Path -LiteralPath $enabledState -PathType Leaf) {
@@ -483,6 +463,7 @@ function New-ServiceDeployment([string]$Profile) {
             "tools\catalog-library.ps1",
             "tools\game-filter-library.ps1",
             "tools\profile-library.ps1",
+            "tools\benchmark-library.ps1",
             "tools\network-mapping-library.ps1",
             "tools\watch-service-mappings.ps1"
         )) {
@@ -651,9 +632,12 @@ function Install-ManagedRefreshTask {
         -Force | Out-Null
 }
 
+. (Join-Path $PSScriptRoot 'service-configuration.ps1')
+
 Write-ServiceOperation "started"
 try {
 switch ($Action) {
+    "apply" { Apply-ManagedServiceConfiguration }
     "install" {
         Invoke-TpmControllerCommand `
             -AppRoot $appRoot `
@@ -739,6 +723,7 @@ switch ($Action) {
             Start-Service -Name $serviceName
             Invoke-ServiceMapping refresh | Out-Null
             [IO.File]::WriteAllText($profileState, $Profile)
+            Save-TpmAppliedConfiguration -AppRoot $serviceRoot -ProfileId $Profile -Mode service -ConfiguredProfile (([IO.File]::ReadAllText((Join-Path $appRoot 'config/config.json')) | ConvertFrom-Json).activeProfile)
             Write-TpmUi "Service installed and started." -ForegroundColor Green
             Write-TpmUi "Profile: $Profile"
             Write-TpmUi "Startup mapping refresh: off"
@@ -780,18 +765,8 @@ switch ($Action) {
         if ($service) {
             Write-TpmUi "Service: installed"
             Write-TpmUi "State:   $($service.Status)"
-            if (Test-Path -LiteralPath $profileState) {
-                Write-TpmUi "Profile: $((Get-Content -Raw -LiteralPath $profileState).Trim())"
-            } elseif (
-                Test-Path `
-                    -LiteralPath (Join-Path $serviceRoot "config\config.json") `
-                    -PathType Leaf
-            ) {
-                $protectedConfig = Get-Content -Raw -LiteralPath (
-                    Join-Path $serviceRoot "config\config.json"
-                ) | ConvertFrom-Json
-                Write-TpmUi "Profile: $([string]$protectedConfig.activeProfile)"
-            }
+            $installedProfile=Get-ManagedServiceProfile
+            if($installedProfile){Write-TpmUi "Profile: $installedProfile"}
         } else {
             Write-TpmUi "Service: not installed"
         }

@@ -55,6 +55,8 @@ function Start-ZapretForeground([string]$ProfileName) {
     ) {
         throw "The standard zapret2 Lua libraries were not found."
     }
+    $launchSnapshot=$null
+    try {$launchSnapshot=if(-not $env:TRAFFIC_PROFILE_BENCHMARK_LIST -and (Get-Command New-TpmConfigurationSnapshot -ErrorAction SilentlyContinue)){New-TpmConfigurationSnapshot $script:AppRoot $ProfileName}else{$null}} catch { Write-Warning ('Launch snapshot could not be prepared: '+$_.Exception.Message) }
     $arguments = @(
         Build-WinwsArguments $false $ProfileName |
             Where-Object {
@@ -70,22 +72,27 @@ function Start-ZapretForeground([string]$ProfileName) {
     $mappingFailed = $false
     Show-TpmProfileSession -ProfileId $ProfileName -LogPath $outputLog -ErrorPath $errorLog
     $quotedArguments = ($arguments | ForEach-Object { ConvertTo-TpmWindowsArgument $_ }) -join ' '
-    $process = Start-Process -FilePath $executable -ArgumentList $quotedArguments `
-        -WorkingDirectory (Split-Path -Parent $executable) -NoNewWindow -PassThru `
-        -RedirectStandardOutput $outputLog -RedirectStandardError $errorLog
-    [void]$process.Handle
-    $processStartTicks = $process.StartTime.ToUniversalTime().Ticks
+    $process = $null
+    $processStartTicks = 0
     $windowsPidPath = Get-AppPath "state\winws2.windows.pid"
-    Write-AtomicText $windowsPidPath ([string]$process.Id)
-    Write-ProcessIdentity $process $executable
-    $mappingReadyPath = Get-AppPath "state\mapping-ready-$($process.Id).flag"
-    if (Test-Path -LiteralPath $mappingReadyPath) {
-        Remove-Item -LiteralPath $mappingReadyPath -Force
-    }
-
+    $mappingReadyPath = $null
     $watcherStarted = $false
     $watcherProcess = $null
+    $mappingAttempted = $false
     try {
+        $process = Start-Process -FilePath $executable -ArgumentList $quotedArguments `
+            -WorkingDirectory (Split-Path -Parent $executable) -NoNewWindow -PassThru `
+            -RedirectStandardOutput $outputLog -RedirectStandardError $errorLog
+        [void]$process.Handle
+        $processStartTicks = $process.StartTime.ToUniversalTime().Ticks
+        $mappingReadyPath = Get-AppPath "state\mapping-ready-$($process.Id).flag"
+        # Clear any marker from a reused PID before publishing the new runtime PID.
+        if ($mappingReadyPath -and (Test-Path -LiteralPath $mappingReadyPath)) {
+            Remove-Item -LiteralPath $mappingReadyPath -Force
+        }
+        Write-AtomicText $windowsPidPath ([string]$process.Id)
+        Write-ProcessIdentity $process $executable $ProfileName $launchSnapshot
+
         $watcherPath = Get-AppPath "tools\watch-foreground.ps1"
         $watcherArguments = New-Object "Collections.Generic.List[string]"
         foreach ($argument in @(
@@ -119,6 +126,7 @@ function Start-ZapretForeground([string]$ProfileName) {
         $watcherStarted = $true
 
         try {
+            $mappingAttempted = $true
             $mappingOutput = @(& (Get-AppPath "tools\manage-network-mappings.ps1") refresh)
             $mappingNotice = $mappingOutput -join ' '
         } catch {
@@ -140,11 +148,11 @@ function Start-ZapretForeground([string]$ProfileName) {
         }
         Show-TpmProfileSession -ProfileId $ProfileName -LogPath $outputLog -ErrorPath $errorLog -State Stopped -MappingNotice $(if ($mappingFailed) { $mappingNotice } else { '' }) -MappingFailed:$mappingFailed
     } finally {
-        if (-not $process.HasExited) {
-            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        if ($process -and -not $process.HasExited) {
+            Stop-Process -InputObject $process -Force -ErrorAction SilentlyContinue
             [void]$process.WaitForExit(5000)
         }
-        if (Test-Path -LiteralPath $mappingReadyPath) {
+        if ($mappingReadyPath -and (Test-Path -LiteralPath $mappingReadyPath)) {
             Remove-Item `
                 -LiteralPath $mappingReadyPath `
                 -Force `
@@ -154,7 +162,9 @@ function Start-ZapretForeground([string]$ProfileName) {
             [void]$watcherProcess.WaitForExit(5000)
         }
         try {
-            & (Get-AppPath "tools\manage-network-mappings.ps1") cleanup *> $null
+            if ($mappingAttempted -or $watcherStarted) {
+                & (Get-AppPath "tools\manage-network-mappings.ps1") cleanup *> $null
+            }
         } catch {
             Write-Warning (
                 "Temporary network mappings could not be cleaned: " +
@@ -167,19 +177,15 @@ function Start-ZapretForeground([string]$ProfileName) {
                 -Force `
                 -ErrorAction SilentlyContinue
         }
-        if (Test-Path -LiteralPath $windowsPidPath) {
-            $storedPid = 0
-            if (
-                [int]::TryParse(
-                    (Get-Content -Raw -LiteralPath $windowsPidPath).Trim(),
-                    [ref]$storedPid
-                ) -and
-                $storedPid -eq $process.Id
-            ) {
-                Remove-Item -LiteralPath $windowsPidPath -Force
+        try {
+            if ($process -and (Test-Path -LiteralPath $windowsPidPath)) {
+                $storedPid = 0
+                if ([int]::TryParse((Get-Content -Raw -LiteralPath $windowsPidPath).Trim(), [ref]$storedPid) -and $storedPid -eq $process.Id) {
+                    Remove-Item -LiteralPath $windowsPidPath -Force
+                }
             }
-        }
-        Remove-ProcessIdentity $process.Id $processStartTicks
+        } catch { Write-Warning $_.Exception.Message }
+        if ($processStartTicks -gt 0) { Remove-ProcessIdentity $process.Id $processStartTicks }
     }
 }
 
@@ -204,6 +210,8 @@ function Start-Zapret([bool]$DryRun, [string]$ProfileName = "") {
             "the Windows bundle."
         )
     }
+    $launchSnapshot=$null
+    try {$launchSnapshot=if(-not $DryRun -and -not $env:TRAFFIC_PROFILE_BENCHMARK_LIST -and (Get-Command New-TpmConfigurationSnapshot -ErrorAction SilentlyContinue)){New-TpmConfigurationSnapshot $script:AppRoot $ProfileName}else{$null}} catch { Write-Warning ('Launch snapshot could not be prepared: '+$_.Exception.Message) }
     $arguments = Build-WinwsArguments $DryRun $ProfileName
     $startInfoParameters = @{
         FilePath = $executable
@@ -237,7 +245,7 @@ function Start-Zapret([bool]$DryRun, [string]$ProfileName = "") {
     }
     $windowsPidPath = Get-AppPath "state\winws2.windows.pid"
     Write-AtomicText $windowsPidPath ([string]$process.Id)
-    Write-ProcessIdentity $process $executable
+    Write-ProcessIdentity $process $executable $ProfileName $launchSnapshot
     Start-Sleep -Milliseconds 500
     if (-not $process.HasExited) {
         Write-TpmUi "winws2 started, Windows PID $($process.Id)"

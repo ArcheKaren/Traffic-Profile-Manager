@@ -26,3 +26,4 @@ deezer.com
 last.fm
 qobuz.com
 tidal.com
+dzcdn.net

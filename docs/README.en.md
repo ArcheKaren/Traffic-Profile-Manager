@@ -61,9 +61,11 @@ English and Russian and remembers your choice.
 
 | Task | Where to start |
 | --- | --- |
-| Compare profiles on your connection | **Test and compare profiles**; reports are saved locally as TXT and CSV |
+| Compare profiles on your connection | **Test and compare profiles**; baseline, quick/full modes, repeated checks and TXT/CSV reports |
 | Adjust domains, IP/CIDR ranges and exclusions | **Edit custom target lists** and **Edit custom exclusion lists** |
-| Create or edit a strategy | **Create a custom profile**, **Edit a traffic profile**, then **Validate profile files** |
+| Create or edit a strategy | **Create a custom profile** offers a step-by-step constructor and the existing JSON editor; new profiles pass `--dry-run` |
+| Save and switch complete setups | **Named setups and application**; editable JSON/TXT and `tools\run-setup.bat <id>` |
+| Inspect pending settings or apply them to a service | **Show status** or **Named setups and application** |
 | Configure games and domain groups | **Game filters** and **Domain packs** |
 | Use an automatic Windows service | **Install a profile as an automatic service** and **Background component controls** |
 | Inspect application connectivity | **Application diagnostics** |
@@ -75,6 +77,14 @@ upstream runtime described in [the build guide](CONTRIBUTING.md#проверки
 The application uses BAT, CMD and PowerShell entry points.
 
 <a id="verify"></a>
+
+Named setups are stored under `state/setups` and included in user backups. They
+reference profile, domain-pack and game-filter IDs, transport settings and their
+own TXT target/exclusion lists. Language and runtime location remain independent.
+Switch with stopped profiles; applying settings to an installed service validates
+the candidate and restores the previous configuration if activation fails.
+Comparison settings are editable in `config/benchmark.json`. HTTP reachability
+does not establish game latency or voice/UDP health. [Detailed workflow](SETUPS.md).
 
 ## 🔐 Administrator access and download verification
 

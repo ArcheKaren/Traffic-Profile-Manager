@@ -168,9 +168,18 @@ function Undo-TransactionFiles([string]$AppRoot, [string]$Directory, $Journal) {
 function Undo-TpmTransaction([string]$AppRoot, [string]$TransactionId) {
     if ($TransactionId -notmatch '^\d{8}-\d{6}-[a-f0-9]{8}$') { throw 'Invalid transaction ID.' }
     Invoke-MaintenanceLock $AppRoot {
-        Assert-MaintenanceStopped $AppRoot
         $directory = Resolve-MaintenancePath $AppRoot ("backups\transactions\$TransactionId")
         $journal = [IO.File]::ReadAllText((Join-Path $directory 'transaction.json')) | ConvertFrom-Json
+        $safeSetupUndo=$journal.purpose -in @('use-setup','save-setup','build-profile')
+        if($safeSetupUndo){
+            foreach($record in $journal.files){
+                $relative=$record.path.Replace('\','/')
+                if($relative -notmatch '^(config/(config\.json|profiles/[a-z0-9_-]+\.json)|lists/(domains\.txt|user-(domains|ips)(-exclude)?\.txt)|state/(setups/[a-z0-9_-]+/(setup\.json|user-(domains|ips)(-exclude)?\.txt)|profile-recipes/[a-z0-9_-]+\.json|domain-packs\.json|enabled-game-filters\.txt|universal-game-transport\.json|selected-setup\.json))$'){
+                    throw 'Unexpected path in a setup transaction.'
+                }
+            }
+            Assert-TpmConfigurationStopped $AppRoot
+        }else{Assert-MaintenanceStopped $AppRoot}
         Undo-TransactionFiles $AppRoot $directory $journal
         [pscustomobject]@{ transactionId=$TransactionId; status='rolled-back' }
     }

@@ -113,6 +113,10 @@ $process = Get-Process -Id $PID
                 ([string](Get-Content -LiteralPath $stderr[0].FullName -Raw)).Contains('runtime-error-marker')
         } "Runtime output was not captured to the session logs in $scenario."
         $workerIdentity = Get-Content -Raw -LiteralPath $identityPath | ConvertFrom-Json
+        $appliedPath=Join-Path $fixture 'state/applied-process.json'
+        if(-not(Test-Path -LiteralPath $appliedPath)){throw 'Foreground launch snapshot was not saved.'}
+        $applied=[IO.File]::ReadAllText($appliedPath)|ConvertFrom-Json
+        if($applied.profile -ne 'fixture' -or $applied.process.pid -ne $workerIdentity.pid -or $applied.process.startTimeUtcTicks -ne $workerIdentity.startTimeUtcTicks){throw 'Foreground launch snapshot does not identify the launched process.'}
         $worker = Register-TestProcess $workerIdentity.pid
         foreach ($record in Get-ChildItem -LiteralPath (Join-Path $fixture "state") -Filter "mapping-process-*.json") {
             $ownedProcesses.Add((Get-Content -Raw -LiteralPath $record.FullName | ConvertFrom-Json))

@@ -367,6 +367,11 @@ $releaseFiles = @(
     "14 - Base (Mixed aggressive).bat"
 )
 $releaseToolFiles = @(
+    'workflows.ps1'
+    'benchmark-library.ps1'
+    'benchmark-run.ps1'
+    'service-configuration.ps1'
+    'run-setup.bat'
     'maintenance.ps1'
     'console-manager.ps1'
     "application-diagnostics.ps1"
@@ -430,6 +435,7 @@ try {
             }
     }
     foreach ($name in @(
+        "benchmark.json"
         "config.json"
         "diagnostic-targets.json"
         "rule-groups.json"
@@ -439,6 +445,7 @@ try {
     foreach ($name in @("targets.txt")) {
         Copy-ProjectFile (Join-Path "tests" $name)
     }
+    Copy-ProjectFile 'docs\SETUPS.md'
     Copy-ProjectFile "docs\PROFILE_FORMAT.md"
     Copy-ProjectFile "docs\GAME_FILTERS.md"
     Copy-ProjectFile "docs\DOMAIN_PACKS.md"

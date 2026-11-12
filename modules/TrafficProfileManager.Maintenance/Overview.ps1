@@ -1,3 +1,4 @@
+. (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'tools/benchmark-library.ps1')
 function Get-TpmOverview {
     param([string]$AppRoot, [string]$HostsPath = '')
     $configPath = Resolve-MaintenancePath $AppRoot 'config/config.json'
@@ -97,18 +98,17 @@ function Get-TpmComparisonResults([string]$AppRoot) {
         $rows = @(Import-Csv -LiteralPath $file.FullName)
         if (-not $rows.Count -or 'ProfileId' -notin $rows[0].PSObject.Properties.Name -or 'Success' -notin $rows[0].PSObject.Properties.Name) { continue }
         $ranking = @(
-            foreach ($group in $rows | Group-Object ProfileId) {
-                if ($group.Name -notmatch '^[a-z0-9][a-z0-9_-]{0,63}$') { continue }
-                $passed = @($group.Group | Where-Object { $_.Success -eq 'True' }).Count
-                [pscustomobject]@{ profileId=$group.Name; profile=$group.Group[0].Profile; passed=$passed; total=$group.Count; score=[Math]::Round(100 * $passed / $group.Count) }
+            foreach ($item in @(Get-TpmBenchmarkRanking $rows)) {
+                if ($item.ProfileId -notmatch '^[a-z0-9][a-z0-9_-]{0,63}$') { continue }
+                [pscustomobject]@{profileId=$item.ProfileId;profile=$item.Profile;passed=$item.Passed;total=$item.Total;score=$item.Score;stable=$item.Stable;repeatedTargets=$item.RepeatedTargets}
             }
-        ) | Sort-Object @{Expression='score';Descending=$true},profileId
+        )
         $createdAt = $file.LastWriteTimeUtc.ToString('o')
         $metadataPath = [IO.Path]::ChangeExtension($file.FullName, '.json')
         try {
             if (Test-Path -LiteralPath $metadataPath) {
                 $metadata = [IO.File]::ReadAllText($metadataPath) | ConvertFrom-Json
-                if ($metadata.schemaVersion -eq 1) { $createdAt = [DateTimeOffset]::Parse($metadata.generatedAt).ToString('o') }
+                if ($metadata.schemaVersion -in @(1,2)) { $createdAt = [DateTimeOffset]::Parse($metadata.generatedAt).ToString('o') }
             }
         } catch {}
         [pscustomobject]@{ file=$file.Name; createdAt=$createdAt; ranking=$ranking }

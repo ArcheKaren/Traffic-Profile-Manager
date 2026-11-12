@@ -41,6 +41,13 @@ Import-Module (
 ) -Force -ErrorAction Stop
 
 $requiredPaths = @(
+    'docs\SETUPS.md'
+    'config\benchmark.json'
+    'tools\workflows.ps1'
+    'tools\benchmark-library.ps1'
+    'tools\benchmark-run.ps1'
+    'tools\service-configuration.ps1'
+    'tools\run-setup.bat'
     'metadata\VERSION'
     'docs\CHANGELOG.md'
     'docs\CONTRIBUTING.md'

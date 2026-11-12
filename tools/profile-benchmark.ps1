@@ -2,13 +2,22 @@
 param(
     [string]$TargetFile = "",
     [string[]]$Profiles = @(),
-    [int]$TimeoutSeconds = 8,
-    [int]$StartupSeconds = 2,
+    [ValidateRange(1,120)][int]$TimeoutSeconds = 8,
+    [ValidateRange(0,30)][int]$StartupSeconds = 2,
+    [ValidateSet('quick','full')][string]$Mode = 'quick',
+    [ValidateRange(0,10)][int]$Rounds = 0,
+    [switch]$SkipBaseline,
     [switch]$NonInteractive
 )
 
 $ErrorActionPreference = "Stop"
 $appRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+. (Join-Path $PSScriptRoot 'benchmark-library.ps1')
+$settings = Get-TpmBenchmarkSettings (Join-Path $appRoot 'config/benchmark.json') $Mode
+if (-not $PSBoundParameters.ContainsKey('TimeoutSeconds')) { $TimeoutSeconds = $settings.timeoutSeconds }
+if (-not $PSBoundParameters.ContainsKey('StartupSeconds')) { $StartupSeconds = $settings.startupSeconds }
+if (-not $Rounds) { $Rounds = $settings.rounds }
+$originalBenchmarkEnvironment = $env:TRAFFIC_PROFILE_BENCHMARK_LIST
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) "modules\TrafficProfileManager.Console\TrafficProfileManager.Console.psd1") -ErrorAction Stop
 Set-TpmUiRoot $appRoot
 
@@ -76,6 +85,7 @@ function Read-Targets {
 }
 
 function Stop-ActiveProfile {
+    if (-not $script:controller) { return }
     & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `
         (Join-Path $appRoot "zapretctl.ps1") stop *> $null
     if ($script:controller -and -not $script:controller.HasExited) {
@@ -124,15 +134,9 @@ function Start-Profile([string]$ProfileId) {
                 (Get-Process -Id $runtimePid -ErrorAction SilentlyContinue)
             ) {
                 $mappingDeadline = [DateTime]::UtcNow.AddSeconds(45)
-                $hostsPath = Join-Path $env:SystemRoot `
-                    "System32\drivers\etc\hosts"
+                $mappingReadyPath = Join-Path $stateRoot "mapping-ready-$runtimePid.flag"
                 do {
-                    $mappingReady = Select-String `
-                        -LiteralPath $hostsPath `
-                        -Pattern "`twww.instagram.com" `
-                        -SimpleMatch `
-                        -Quiet `
-                        -ErrorAction SilentlyContinue
+                    $mappingReady = Test-Path -LiteralPath $mappingReadyPath -PathType Leaf
                     if ($mappingReady) { break }
                     if ($script:controller.HasExited) {
                         throw "Profile $ProfileId stopped while preparing mappings."
@@ -277,6 +281,7 @@ function Update-CertificateChainCache([string]$HostName) {
 
 function Invoke-TargetChecks($Targets) {
     $pending = New-Object "Collections.Generic.List[object]"
+    try {
     foreach ($target in $Targets) {
         $startInfo = New-CurlStartInfo $target
         $process = [Diagnostics.Process]::Start($startInfo)
@@ -336,202 +341,12 @@ function Invoke-TargetChecks($Targets) {
             Detail = $detail
         }
     }
+    } finally {
+        foreach ($entry in $pending) {
+            if (-not $entry.Process.HasExited) { Stop-Process -InputObject $entry.Process -Force -ErrorAction SilentlyContinue }
+            $entry.Process.Dispose()
+        }
+    }
 }
 
-try {
-    if (-not (Test-TpmIsAdministrator)) {
-        throw "Run tools\Test Profiles.bat and approve the administrator prompt."
-    }
-    if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
-        throw "curl.exe is required and was not found."
-    }
-    if (
-        Get-Service -Name "TrafficProfileService" -ErrorAction SilentlyContinue |
-            Where-Object Status -eq "Running"
-    ) {
-        throw "Remove or stop the automatic service before running the comparison."
-    }
-    if ($invalidProfiles.Count -gt 0) {
-        Write-TpmUi "Invalid profile files will be skipped:" -ForegroundColor Red
-        foreach ($profile in $invalidProfiles) {
-            Write-TpmUi "  $($profile.Id): $($profile.Error)" -ForegroundColor Red
-        }
-        Write-TpmUi ""
-    }
-    if ($profileCatalog.Count -eq 0) {
-        throw "No valid profile files were found."
-    }
-
-    $targets = @(Read-Targets)
-    if ($Profiles.Count -gt 0) {
-        $selected = @($profileCatalog | Where-Object { $_.Id -in $Profiles })
-        if ($selected.Count -ne $Profiles.Count) {
-            throw "One or more profile IDs are unknown."
-        }
-    } else {
-        $selected = $profileCatalog
-    }
-
-    New-Item -ItemType Directory -Path $resultRoot, $stateRoot -Force | Out-Null
-    [IO.File]::WriteAllLines(
-        $benchmarkHostList,
-        @("# Temporary comparison list. Generated automatically.") +
-            @($targets.Host | Sort-Object -Unique),
-        [Text.UTF8Encoding]::new($false)
-    )
-    $env:TRAFFIC_PROFILE_BENCHMARK_LIST = $benchmarkHostList
-
-    & (Join-Path $appRoot "tools\manage-network-mappings.ps1") install | Out-Host
-    $script:managedMappingsInstalled = $true
-    $watcherPath = Join-Path $appRoot "tools\watch-benchmark.ps1"
-    $watcherInfo = New-TpmProcessStartInfo `
-        -FilePath "powershell.exe" `
-        -ArgumentList @(
-            "-NoLogo",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            $watcherPath,
-            "-ControllerPid",
-            [string]$PID,
-            "-ControllerStartTicks",
-            [string](Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks
-        ) `
-        -UseShellExecute `
-        -WindowStyle Hidden
-    [void][Diagnostics.Process]::Start($watcherInfo)
-
-    Write-TpmUi ""
-    Write-TpmUi "Traffic Profile Comparison" -ForegroundColor Cyan
-    Write-TpmUi "Profiles: $($selected.Count)   Endpoints: $($targets.Count)"
-    Write-TpmUi "Results reflect the connection and routing active during this run."
-    Write-TpmUi "OK = normal HTTP response; UP = endpoint reached with HTTP 5xx."
-    Write-TpmUi ""
-    if (-not $NonInteractive) {
-        $answer = Read-TpmUi "Press Enter to start, or type Q to cancel"
-        if ($answer -match '^(q|quit)$') { return }
-    }
-
-    $allResults = New-Object "Collections.Generic.List[object]"
-    $profileIndex = 0
-    foreach ($profile in $selected) {
-        $profileIndex++
-        Write-TpmUi (
-            "[{0}/{1}] {2} - {3}" -f
-            $profileIndex, $selected.Count, $profile.Number, $profile.Label
-        ) -ForegroundColor Yellow
-        try {
-            Start-Profile $profile.Id
-            $checks = @(Invoke-TargetChecks $targets)
-        } catch {
-            $profileError = $_.Exception.Message
-            Write-TpmUi "  Test error: $profileError" -ForegroundColor Red
-            $checks = @(
-                foreach ($target in $targets) {
-                    [pscustomobject]@{
-                        Target = $target.Name
-                        Url = $target.Url
-                        Success = $false
-                        Healthy = $false
-                        HttpCode = "000"
-                        ExitCode = -1
-                        Detail = $profileError
-                    }
-                }
-            )
-        } finally {
-            Stop-ActiveProfile
-        }
-        foreach ($check in $checks) {
-            $allResults.Add([pscustomobject]@{
-                ProfileNumber = $profile.Number
-                ProfileId = $profile.Id
-                Profile = $profile.Label
-                Target = $check.Target
-                Url = $check.Url
-                Success = $check.Success
-                Healthy = $check.Healthy
-                HttpCode = $check.HttpCode
-                ExitCode = $check.ExitCode
-                Detail = $check.Detail
-            })
-            $mark = if (-not $check.Success) {
-                "--"
-            } elseif ($check.Healthy) {
-                "OK"
-            } else {
-                "UP"
-            }
-            Write-TpmUi (
-                "  {0,-18} {1,3}  HTTP {2}" -f
-                $check.Target, $mark, $check.HttpCode
-            )
-        }
-        Write-TpmUi ""
-    }
-
-    $ranking = @(
-        foreach ($profile in $selected) {
-            $rows = @($allResults | Where-Object ProfileId -eq $profile.Id)
-            $passed = @($rows | Where-Object Success).Count
-            [pscustomobject]@{
-                Number = $profile.Number
-                Profile = $profile.Label
-                Passed = $passed
-                Total = $rows.Count
-                Score = if ($rows.Count) {
-                    [Math]::Round(100 * $passed / $rows.Count)
-                } else {
-                    0
-                }
-            }
-        }
-    ) | Sort-Object `
-        @{ Expression = "Score"; Descending = $true },
-        @{ Expression = "Passed"; Descending = $true },
-        @{ Expression = "Number"; Descending = $false }
-
-    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $csvPath = Join-Path $resultRoot "profile-comparison-$stamp.csv"
-    $textPath = Join-Path $resultRoot "profile-comparison-$stamp.txt"
-    $allResults | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding UTF8
-    $metadata = @{schemaVersion=1;generatedAt=[DateTimeOffset]::Now.ToString('o');version=(Get-TpmBuildInfo $appRoot).version;targets=@($targets.Url);profiles=@($selected.Id)}
-    [IO.File]::WriteAllText((Join-Path $resultRoot "profile-comparison-$stamp.json"), ($metadata | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
-    $summary = @(
-        "Traffic Profile Comparison"
-        "Created: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-        "Target pool: $targetPath"
-        "Scoring: HTTP 2xx-4xx = OK; HTTP 5xx = reachable (UP); no HTTP response = failed."
-        ""
-        ($ranking | Format-Table -AutoSize | Out-String).TrimEnd()
-        ""
-        (
-            "Best result: profile {0} - {1} ({2}/{3})" -f
-            $ranking[0].Number,
-            $ranking[0].Profile,
-            $ranking[0].Passed,
-            $ranking[0].Total
-        )
-    )
-    [IO.File]::WriteAllLines($textPath, $summary, [Text.UTF8Encoding]::new($false))
-
-    Write-TpmUi "Ranking" -ForegroundColor Cyan
-    $ranking | Format-Table -AutoSize
-    Write-TpmUi (
-        "Best result: profile {0} - {1}" -f
-        $ranking[0].Number, $ranking[0].Profile
-    ) -ForegroundColor Green
-    Write-TpmUi "Reports:"
-    Write-TpmUi "  $textPath"
-    Write-TpmUi "  $csvPath"
-} finally {
-    Stop-ActiveProfile
-    if ($script:managedMappingsInstalled) {
-        & (Join-Path $appRoot "tools\manage-network-mappings.ps1") cleanup *> $null
-    }
-    Remove-Item Env:\TRAFFIC_PROFILE_BENCHMARK_LIST -ErrorAction SilentlyContinue
-    if (Test-Path -LiteralPath $benchmarkHostList) {
-        Remove-Item -LiteralPath $benchmarkHostList -Force -ErrorAction SilentlyContinue
-    }
-}
+. (Join-Path $PSScriptRoot 'benchmark-run.ps1')

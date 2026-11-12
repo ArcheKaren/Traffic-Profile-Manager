@@ -1,6 +1,6 @@
 @{
     RootModule = "TrafficProfileManager.Operations.psm1"
-    ModuleVersion = "1.2.1"
+    ModuleVersion = "1.3.0"
     GUID = "795d4fd3-73bd-45ee-acbc-9e55f8d0c218"
     Author = "Traffic Profile Manager contributors"
     Description = "Append-only local JSONL journal for privileged operations."

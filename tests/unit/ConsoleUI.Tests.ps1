@@ -132,4 +132,30 @@ Describe 'Console manager language selection' {
         ([IO.File]::ReadAllText((Join-Path $root 'state\user-settings.json'))|ConvertFrom-Json).language|Should -Be 'en'
         $again|Should -Match 'Language: en'
     }
+    It 'opens named setups in Russian and saves an ordinary editable setup' {
+        $root=New-ConsoleDataFixture 'ru'
+        foreach($directory in @('profiles','schemas')){Copy-Item -LiteralPath (Join-Path $projectRoot "config/$directory") -Destination (Join-Path $root "config/$directory") -Recurse}
+        Copy-Item -LiteralPath (Join-Path $projectRoot 'config/rule-groups.json') -Destination (Join-Path $root 'config/rule-groups.json')
+        foreach($file in Get-ChildItem -LiteralPath (Join-Path $projectRoot 'assets') -File){Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $root "assets/$($file.Name)") -Force}
+        [IO.File]::WriteAllText((Join-Path $root 'config/config.json'),'{"activeProfile":"strategy-wa-pc-pos1"}')
+        $output=Invoke-ConsoleFixture $root @('20','1','my-setup','Custom setup','','0','0')
+        $dictionary=[IO.File]::ReadAllText((Join-Path $root 'modules/TrafficProfileManager.Console/ru.json'))|ConvertFrom-Json
+        $output|Should -Match ([regex]::Escape($dictionary.'Named setups and application'))
+        $output|Should -Not -Match 'Save current settings|Show pending changes|Exception|not recognized'
+        Test-Path -LiteralPath (Join-Path $root 'state/setups/main/setup.json')|Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $root 'state/setups/my-setup/user-domains.txt')|Should -BeTrue
+    }
+    It 'previews the constructor compactly and cancels without creating a profile' -TestCases @(@{Language='en'},@{Language='ru'}) {
+        param($Language)
+        $root=New-ConsoleDataFixture $Language
+        foreach($directory in @('profiles','schemas')){Copy-Item -LiteralPath (Join-Path $projectRoot "config/$directory") -Destination (Join-Path $root "config/$directory") -Recurse}
+        Copy-Item -LiteralPath (Join-Path $projectRoot 'config/rule-groups.json') -Destination (Join-Path $root 'config/rule-groups.json')
+        foreach($file in Get-ChildItem -LiteralPath (Join-Path $projectRoot 'assets') -File){Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $root "assets/$($file.Name)") -Force}
+        [IO.File]::WriteAllText((Join-Path $root 'config/config.json'),'{"activeProfile":"strategy-wa-pc-pos1"}')
+        $output=Invoke-ConsoleFixture $root @('11','1','1','preview-only','Preview','0','0','0','','','0')
+        $output|Should -Match 'preview-only'
+        $output|Should -Not -Match '"interception"|Exception|not recognized'
+        if($Language -eq 'ru'){$output|Should -Not -Match 'Choose HTTP strategy|Base profile|Type CREATE to validate and save'}
+        Test-Path -LiteralPath (Join-Path $root 'config/profiles/preview-only.json')|Should -BeFalse
+    }
 }

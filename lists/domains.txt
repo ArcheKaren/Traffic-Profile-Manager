@@ -1,5 +1,5 @@
 # Generated from lists\catalog.json. Use the domain pack manager.
-# Catalog revision: 2026.08.03.1
+# Catalog revision: 2026.11.12.1
 # Enabled packs: video-platforms, cloud-delivery, streaming-media, discord, meta-quest, vr-companions, social-communication, publishing, source-hosting, general-web
 
 # Pack: Video platforms [video-platforms]
@@ -44,6 +44,14 @@ cloudflarestorage.com
 cloudflarestream.com
 cloudflaretest.com
 cloudfront.net
+^dns.google
+^dns.quad9.net
+^dns.nextdns.io
+^doh.opendns.com
+^doh.cleanbrowsing.org
+^freedns.controld.com
+^wikimedia-dns.org
+^cloudflare-dns.com
 
 # Pack: Streaming and media [streaming-media]
 frankerfacez.com
@@ -73,6 +81,7 @@ deezer.com
 last.fm
 qobuz.com
 tidal.com
+dzcdn.net
 
 # Pack: Discord [discord]
 discord.com
@@ -98,6 +107,8 @@ discordmerch.com
 discordsays.com
 discordsez.com
 stable.dl2.discordapp.net
+discord.status
+discordpartygames.com
 
 # Pack: Meta platforms and Quest [meta-quest]
 instagram.com
@@ -216,6 +227,11 @@ archive.org
 archive-it.org
 archive.ph
 archiveofourown.org
+telegram-cdn.org
+signal.group
+signal.link
+signal.me
+signal.tube
 
 # Pack: Publishing and community [publishing]
 medium.com
@@ -294,3 +310,7 @@ rutor.org
 rutor.info
 rutor.is
 nnmclub.to
+pximg.net
+deviantart.net
+da-files.com
+embed-cdn.com

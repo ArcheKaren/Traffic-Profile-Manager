@@ -1,5 +1,5 @@
 function Test-UserDataPath([string]$Path) {
-    return $Path -match '^(config|lists|assets)/' -or $Path -eq 'tests/targets.txt' -or
+    return $Path -match '^(config|lists|assets)/' -or $Path -match '^state/setups/[a-z0-9][a-z0-9_-]{0,63}/(setup\.json|user-(domains|ips)(-exclude)?\.txt)$' -or $Path -match '^state/profile-recipes/[a-z0-9][a-z0-9_-]{0,63}\.json$' -or $Path -eq 'state/selected-setup.json' -or $Path -eq 'tests/targets.txt' -or
         $Path -in @('state/user-settings.json','state/domain-packs.json','state/enabled-game-filters.txt','state/universal-game-transport.json','state/service-profile.txt')
 }
 
@@ -15,6 +15,16 @@ function New-TpmUserBackup {
                 $base = Resolve-MaintenancePath $AppRoot $directory
                 if (Test-Path -LiteralPath $base) { Get-ChildItem -LiteralPath $base -File -Recurse }
             }
+            foreach ($directory in @('state/setups','state/profile-recipes')) {
+                $base = Resolve-MaintenancePath $AppRoot $directory
+                if (Test-Path -LiteralPath $base) {
+                    Get-ChildItem -LiteralPath $base -File -Recurse | Where-Object {
+                        Test-UserDataPath ($_.FullName.Substring([IO.Path]::GetFullPath($AppRoot).TrimEnd('\').Length+1).Replace('\','/'))
+                    }
+                }
+            }
+            $selected = Resolve-MaintenancePath $AppRoot 'state/selected-setup.json'
+            if (Test-Path -LiteralPath $selected) { Get-Item -LiteralPath $selected }
             foreach ($relative in @('tests/targets.txt','state/user-settings.json','state/domain-packs.json','state/enabled-game-filters.txt','state/universal-game-transport.json','state/service-profile.txt')) {
                 $path = Resolve-MaintenancePath $AppRoot $relative
                 if (Test-Path -LiteralPath $path -PathType Leaf) { Get-Item -LiteralPath $path }

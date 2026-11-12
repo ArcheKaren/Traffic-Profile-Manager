@@ -111,7 +111,10 @@ try {
     $compiledDomains = [IO.File]::ReadAllText(
         (Join-Path $resolvedTest "lists\domains.txt")
     )
-    if ($compiledDomains -notmatch "Catalog revision: 2026\.08\.03\.1") {
+    $catalogRevision = ([IO.File]::ReadAllText(
+        (Join-Path $resolvedTest "lists\catalog.json")
+    ) | ConvertFrom-Json).revision
+    if (-not $compiledDomains.Contains("Catalog revision: $catalogRevision")) {
         throw "Domain pack update did not rebuild domains.txt."
     }
     Invoke-Cli @("pack", "enable", "general-web") | Out-Null

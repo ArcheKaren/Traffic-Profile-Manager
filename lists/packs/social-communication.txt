@@ -82,3 +82,8 @@ archive.org
 archive-it.org
 archive.ph
 archiveofourown.org
+telegram-cdn.org
+signal.group
+signal.link
+signal.me
+signal.tube

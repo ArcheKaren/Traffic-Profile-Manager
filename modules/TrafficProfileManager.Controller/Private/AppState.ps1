@@ -95,7 +95,9 @@ function Initialize-UserLists {
 
 function Write-ProcessIdentity(
     [Diagnostics.Process]$Process,
-    [string]$Executable
+    [string]$Executable,
+    [string]$ProfileName = '',
+    [object]$LaunchSnapshot = $null
 ) {
     $identity = [ordered]@{
         pid = $Process.Id
@@ -103,6 +105,10 @@ function Write-ProcessIdentity(
         executable = [IO.Path]::GetFullPath($Executable)
     }
     Write-JsonFile (Get-AppPath "state\winws2.identity.json") $identity
+    if ($LaunchSnapshot -and -not $env:TRAFFIC_PROFILE_BENCHMARK_LIST -and (Get-Command Save-TpmAppliedConfiguration -ErrorAction SilentlyContinue)) {
+        try { Save-TpmAppliedConfiguration -AppRoot $script:AppRoot -ProfileId $ProfileName -Process $Process -Snapshot $LaunchSnapshot }
+        catch { Write-Warning ('Launch snapshot could not be saved: ' + $_.Exception.Message) }
+    }
 }
 
 function Remove-ProcessIdentity(

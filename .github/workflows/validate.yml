@@ -169,6 +169,10 @@ jobs:
           .\tools\restore-runtime.ps1 `
             -ArchivePath (Join-Path $directory $manifest.bootstrapRelease.asset)
 
+      - name: Проверка конструктора настоящим runtime
+        shell: powershell
+        run: .\tests\integration\profile-constructor.ps1
+
       - name: Сборка и проверка архива
         shell: powershell
         run: .\tools\build-release.ps1 -NoDirectorySync

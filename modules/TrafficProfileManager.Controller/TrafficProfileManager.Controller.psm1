@@ -1,3 +1,4 @@
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'TrafficProfileManager.Maintenance/TrafficProfileManager.Maintenance.psd1') -ErrorAction Stop
 $script:ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Import-Module (Join-Path $script:ProjectRoot 'modules\TrafficProfileManager.Console\TrafficProfileManager.Console.psd1') -ErrorAction Stop
 
@@ -59,6 +60,10 @@ zapretctl - local traffic profile manager
   update check|download|preview|apply     check and install verified updates
   update rollback <transaction-id>       roll back a file operation
   results list|use <profile-id>           inspect saved comparisons
+  setup list|create|save|show|preview|use|run [id]
+                                        manage named JSON/TXT setups
+  configuration status|apply             inspect pending changes; apply to service
+  build-profile preview|create <recipe>  construct a new validated JSON profile
   domain add|remove <domain>            modify the domain list
   domain exclude [add|remove] <domain>  modify domain exclusions
   domain list [--exclude]               show the list
@@ -104,6 +109,10 @@ function Invoke-TpmControllerCommand {
     Set-TpmUiRoot $script:AppRoot
     $commandName = $Command.ToLowerInvariant()
     switch ($commandName) {
+        { $_ -in @('setup','configuration','build-profile') } {
+            if ($commandName -eq 'setup' -and (-not $CommandArgs.Count -or $CommandArgs[0] -notin @('preview','show'))) { Ensure-Initialized }
+            & (Join-Path $script:ProjectRoot 'tools/workflows.ps1') -Command $commandName -Arguments $CommandArgs -RootPath $script:AppRoot
+        }
         { $_ -in @('overview','advice','language','backup','update','results') } {
             & (Join-Path $script:ProjectRoot 'tools\maintenance.ps1') -Action $commandName -Arguments $CommandArgs -RootPath $script:AppRoot
         }

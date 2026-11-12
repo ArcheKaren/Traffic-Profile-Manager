@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "timeoutSeconds": 8,
+  "startupSeconds": 2,
+  "quickRounds": 1,
+  "fullRounds": 3,
+  "finalistCount": 3,
+  "finalistExtraRounds": 2,
+  "baseline": true
+}

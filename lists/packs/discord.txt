@@ -22,3 +22,5 @@ discordmerch.com
 discordsays.com
 discordsez.com
 stable.dl2.discordapp.net
+discord.status
+discordpartygames.com
