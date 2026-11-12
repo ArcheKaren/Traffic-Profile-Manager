@@ -293,6 +293,7 @@ function Build-WinwsArguments([bool]$DryRun, [string]$ProfileName = "") {
     $result = New-Object "Collections.Generic.List[string]"
     if ($DryRun) {
         $result.Add("--dry-run")
+        $result.Add("--wf-dup-check=0")
     } else {
         $result.Add("--daemon")
         $result.Add("--pidfile=$(Get-AppPath 'state\winws2.pid')")
